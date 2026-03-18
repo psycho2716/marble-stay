@@ -131,7 +131,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
     const { data: reviewsData, error: reviewsError } = await supabaseClient
         .from("reviews")
         .select(
-            "rating, bookings(room_id, rooms(hotel_id, hotels(id, name, address, images, profile_image, verification_status)))"
+            "rating, bookings(room_id, rooms(hotel_id, hotels(id, name, address, images, profile_image, verification_status, currency)))"
         );
 
     if (reviewsError) {
@@ -171,13 +171,15 @@ router.get("/hotels/top-rated", async (_req, res) => {
         if (!hotel || hotel.verification_status !== "verified") continue;
         const entry = byHotel.get(hotel.id);
         if (!entry) {
-            byHotel.set(hotel.id, {
+            const h = hotel as { id: string; name: string; address: string | null; images: string[] | null; profile_image: string | null; currency?: string | null };
+        byHotel.set(hotel.id, {
                 hotel: {
-                    id: hotel.id,
-                    name: hotel.name,
-                    address: hotel.address ?? null,
-                    images: hotel.images ?? null,
-                    profile_image: hotel.profile_image ?? null
+                    id: h.id,
+                    name: h.name,
+                    address: h.address ?? null,
+                    images: h.images ?? null,
+                    profile_image: h.profile_image ?? null,
+                    currency: h.currency ?? "PHP"
                 },
                 ratings: [r.rating]
             });
@@ -207,7 +209,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
     if (result.length === 0) {
         const { data: fallback } = await supabaseClient
             .from("hotels")
-            .select("id, name, address, images, profile_image")
+            .select("id, name, address, images, profile_image, currency")
             .eq("verification_status", "verified")
             .order("created_at", { ascending: false })
             .limit(6);
@@ -216,6 +218,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
             address: (h as { address?: string | null }).address ?? null,
             images: (h as { images?: string[] | null }).images ?? null,
             profile_image: (h as { profile_image?: string | null }).profile_image ?? null,
+            currency: (h as { currency?: string | null }).currency ?? "PHP",
             average_rating: 0,
             review_count: 0
         }));
@@ -235,6 +238,8 @@ router.get("/hotels/top-rated", async (_req, res) => {
     res.json(result);
 });
 
+const HOTELS_PAGE_SIZE = 8;
+
 router.get("/hotels", async (req, res) => {
     const minPriceQ = typeof req.query.minPrice === "string" ? Number(req.query.minPrice) : null;
     const maxPriceQ = typeof req.query.maxPrice === "string" ? Number(req.query.maxPrice) : null;
@@ -246,6 +251,11 @@ router.get("/hotels", async (req, res) => {
                   .map((s) => s.trim())
                   .filter(Boolean)
             : [];
+    const locationQ = typeof req.query.location === "string" ? req.query.location.trim() : "";
+    const pageRaw = typeof req.query.page === "string" ? parseInt(req.query.page, 10) : 1;
+    const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : HOTELS_PAGE_SIZE;
+    const page = Number.isFinite(pageRaw) && pageRaw >= 1 ? pageRaw : 1;
+    const limit = Number.isFinite(limitRaw) && limitRaw >= 1 && limitRaw <= 50 ? limitRaw : HOTELS_PAGE_SIZE;
 
     const minPrice = Number.isFinite(minPriceQ as number) ? (minPriceQ as number) : null;
     const maxPrice = Number.isFinite(maxPriceQ as number) ? (maxPriceQ as number) : null;
@@ -262,7 +272,14 @@ router.get("/hotels", async (req, res) => {
         return;
     }
 
-    const hotels = (hotelsRaw ?? []) as Array<Record<string, unknown>>;
+    let hotels = (hotelsRaw ?? []) as Array<Record<string, unknown>>;
+    if (locationQ) {
+        const needle = locationQ.toLowerCase();
+        hotels = hotels.filter((h) => {
+            const addr = ((h as { address?: unknown }).address ?? "") as string | null;
+            return typeof addr === "string" && addr.toLowerCase().includes(needle);
+        });
+    }
     const hotelIds = hotels.map((h) => h.id).filter((id): id is string => typeof id === "string");
 
     // Load rooms for pricing + amenities filtering (published rooms = available rooms on verified hotels)
@@ -383,7 +400,19 @@ router.get("/hotels", async (req, res) => {
         }
     }
 
-    res.json(result);
+    const total = result.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const pageClamped = Math.min(page, totalPages);
+    const start = (pageClamped - 1) * limit;
+    const paginated = result.slice(start, start + limit);
+
+    res.json({
+        hotels: paginated,
+        total,
+        page: pageClamped,
+        limit,
+        totalPages
+    });
 });
 
 /** GET /api/hotels/filters — dynamic filter options (price bounds + amenities) */
@@ -489,7 +518,7 @@ router.get("/rooms/:id", async (req, res) => {
     const { data: row, error: roomError } = await supabaseClient
         .from("rooms")
         .select(
-            "*, hotels!inner(id, name, address, verification_status, payment_qr_image, payment_account_name, payment_account_number)"
+            "*, hotels!inner(id, name, address, verification_status, currency, payment_qr_image, payment_account_name, payment_account_number)"
         )
         .eq("id", roomId)
         .single();
@@ -722,7 +751,8 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
         check_in_time,
         check_out_time,
         payment_account_name,
-        payment_account_number
+        payment_account_number,
+        currency
     } = req.body;
     const updates: Record<string, unknown> = {};
     if (description !== undefined) updates.description = description;
@@ -734,6 +764,10 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
         updates.payment_account_name = payment_account_name || null;
     if (payment_account_number !== undefined)
         updates.payment_account_number = payment_account_number || null;
+    if (currency !== undefined) {
+        const code = typeof currency === "string" ? currency.trim().toUpperCase() || "PHP" : "PHP";
+        updates.currency = code;
+    }
 
     if (Object.keys(updates).length === 0) {
         res.status(400).json({ error: "No fields to update" });
