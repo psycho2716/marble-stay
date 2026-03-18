@@ -60,12 +60,16 @@ router.post(
 
     const { data: room, error: roomError } = await supabaseClient
       .from("rooms")
-      .select("id, base_price_night, hourly_rate, hourly_available_hours")
+      .select("id, base_price_night, hourly_rate, hourly_available_hours, is_available")
       .eq("id", room_id)
       .single();
 
     if (roomError || !room) {
       res.status(404).json({ error: "Room not found" });
+      return;
+    }
+    if ((room as unknown as { is_available?: boolean }).is_available === false) {
+      res.status(400).json({ error: "Room is currently unavailable" });
       return;
     }
 

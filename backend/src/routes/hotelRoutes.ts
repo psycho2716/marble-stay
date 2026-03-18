@@ -269,6 +269,7 @@ router.get("/hotels/:id", async (req, res) => {
         .from("rooms")
         .select("*")
         .eq("hotel_id", hotelId)
+        .eq("is_available", true)
         .order("base_price_night", { ascending: true });
 
     if (roomsError) {
@@ -335,7 +336,11 @@ router.get("/rooms/:id", async (req, res) => {
         hotel_id: string;
         media?: { type: string; path: string }[];
     };
-    if (!room.hotels || room.hotels.verification_status !== "verified") {
+    if (
+        !room.hotels ||
+        room.hotels.verification_status !== "verified" ||
+        (room as unknown as { is_available?: boolean }).is_available === false
+    ) {
         res.status(404).json({ error: "Room not found" });
         return;
     }
@@ -860,6 +865,56 @@ router.get("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res) 
     res.json(rooms);
 });
 
+/** GET /api/hotel/rooms/:id — fetch a single room for the authenticated hotel. */
+router.get("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req, res) => {
+    if (!req.supabaseAccessToken) {
+        res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+        return;
+    }
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const { data: profile, error: profileError } = await db
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const roomId = req.params.id;
+    const { data, error } = await db
+        .from("rooms")
+        .select("*")
+        .eq("id", roomId)
+        .eq("hotel_id", profile.hotel_id)
+        .single();
+
+    if (error || !data) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+    }
+    const room = data as Record<string, unknown>;
+    const media = (room.media as { type?: string; path: string }[] | null) ?? [];
+    if (Array.isArray(media) && media.length > 0) {
+        (room as Record<string, unknown>).media_urls = [];
+        for (const item of media) {
+            if (!item?.path) continue;
+            const { data: signed } = await supabaseAdmin.storage
+                .from("hotel-assets")
+                .createSignedUrl(item.path, 3600);
+            if (signed?.signedUrl) {
+                (room as { media_urls: Array<{ type: string; url: string }> }).media_urls.push({
+                    type: item.type || "image",
+                    url: signed.signedUrl
+                });
+            }
+        }
+    }
+    res.json(room);
+});
+
 /** POST /api/hotel/rooms — create a room for the authenticated hotel. */
 router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res) => {
     if (!req.supabaseAccessToken) {
@@ -887,6 +942,7 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         amenities,
         description,
         offer_hourly,
+        is_available,
         media,
         bathroom_count,
         bathroom_shared,
@@ -944,6 +1000,7 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         capacity: cap,
         offer_hourly: offerHourly,
         hourly_rate: hourly ?? null,
+        is_available: is_available === undefined ? true : Boolean(is_available),
         hourly_available_hours: hourlyAvailableHours,
         amenities: Array.isArray(amenities) ? amenities : [],
         description: description != null ? String(description).trim() || null : null,
@@ -989,6 +1046,7 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
         amenities,
         description,
         offer_hourly,
+        is_available,
         media,
         bathroom_count,
         bathroom_shared,
@@ -1000,6 +1058,7 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
     if (room_type !== undefined) updates.room_type = String(room_type).trim();
     if (description !== undefined) updates.description = String(description).trim() || null;
     if (offer_hourly !== undefined) updates.offer_hourly = Boolean(offer_hourly);
+    if (is_available !== undefined) updates.is_available = Boolean(is_available);
     if (base_price_night !== undefined) {
         const v = Number(base_price_night);
         if (Number.isNaN(v) || v < 0) {
