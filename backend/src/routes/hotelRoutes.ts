@@ -235,19 +235,194 @@ router.get("/hotels/top-rated", async (_req, res) => {
     res.json(result);
 });
 
-router.get("/hotels", async (_req, res) => {
-    const { data, error } = await supabaseClient
+router.get("/hotels", async (req, res) => {
+    const minPriceQ = typeof req.query.minPrice === "string" ? Number(req.query.minPrice) : null;
+    const maxPriceQ = typeof req.query.maxPrice === "string" ? Number(req.query.maxPrice) : null;
+    const ratingMinQ = typeof req.query.rating === "string" ? Number(req.query.rating) : null;
+    const amenitiesQ =
+        typeof req.query.amenities === "string"
+            ? req.query.amenities
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+            : [];
+
+    const minPrice = Number.isFinite(minPriceQ as number) ? (minPriceQ as number) : null;
+    const maxPrice = Number.isFinite(maxPriceQ as number) ? (maxPriceQ as number) : null;
+    const ratingMin = Number.isFinite(ratingMinQ as number) ? (ratingMinQ as number) : null;
+
+    const { data: hotelsRaw, error: hotelsError } = await supabaseClient
         .from("hotels")
         .select("*")
         .eq("verification_status", "verified")
         .order("created_at", { ascending: false });
 
-    if (error) {
+    if (hotelsError) {
         res.status(500).json({ error: "Failed to load hotels" });
         return;
     }
 
-    res.json(data);
+    const hotels = (hotelsRaw ?? []) as Array<Record<string, unknown>>;
+    const hotelIds = hotels.map((h) => h.id).filter((id): id is string => typeof id === "string");
+
+    // Load rooms for pricing + amenities filtering (published rooms = available rooms on verified hotels)
+    const { data: roomsRaw, error: roomsError } = await supabaseClient
+        .from("rooms")
+        .select("hotel_id, base_price_night, amenities")
+        .in("hotel_id", hotelIds)
+        .eq("is_available", true);
+
+    if (roomsError) {
+        res.status(500).json({ error: "Failed to load hotel rooms for filtering" });
+        return;
+    }
+
+    const roomsByHotel = new Map<string, Array<{ price: number | null; amenities: string[] }>>();
+    for (const r of roomsRaw ?? []) {
+        const hid = (r as { hotel_id?: unknown }).hotel_id;
+        if (typeof hid !== "string") continue;
+        const priceRaw = (r as { base_price_night?: unknown }).base_price_night;
+        const price = typeof priceRaw === "number" ? priceRaw : Number(priceRaw);
+        const amenities = Array.isArray((r as { amenities?: unknown }).amenities)
+            ? ((r as { amenities?: unknown }).amenities as unknown[]).filter(
+                  (a): a is string => typeof a === "string" && a.trim().length > 0
+              )
+            : [];
+        const entry = roomsByHotel.get(hid) ?? [];
+        entry.push({ price: Number.isFinite(price) ? price : null, amenities });
+        roomsByHotel.set(hid, entry);
+    }
+
+    const result: Record<string, unknown>[] = [];
+    for (const h of hotels) {
+        const hid = h.id as string | undefined;
+        if (!hid) continue;
+
+        // rating filter (if available)
+        if (ratingMin != null) {
+            const r = Number((h as { average_rating?: unknown }).average_rating ?? 0);
+            if (!Number.isFinite(r) || r < ratingMin) continue;
+        }
+
+        const rooms = roomsByHotel.get(hid) ?? [];
+        if (rooms.length === 0) continue;
+
+        // Apply room-level filters (price + amenities) and ensure at least one room matches.
+        const matches = rooms.filter((room) => {
+            const price = room.price;
+            if (minPrice != null && price != null && price < minPrice) return false;
+            if (maxPrice != null && price != null && price > maxPrice) return false;
+            if (amenitiesQ.length > 0) {
+                const set = new Set(room.amenities.map((a) => a.toLowerCase()));
+                for (const a of amenitiesQ) {
+                    if (!set.has(a.toLowerCase())) return false;
+                }
+            }
+            return true;
+        });
+
+        if (matches.length === 0) continue;
+
+        const minRoomPrice = matches
+            .map((m) => m.price)
+            .filter((p): p is number => typeof p === "number" && Number.isFinite(p))
+            .sort((a, b) => a - b)[0];
+
+        const out = { ...h } as Record<string, unknown>;
+        if (minRoomPrice != null) out.min_price = String(minRoomPrice);
+        result.push(out);
+    }
+
+    // Attach average_rating / review_count (same source as /hotels/top-rated).
+    const hotelIdSet = new Set(result.map((h) => h.id).filter((id): id is string => typeof id === "string"));
+    if (hotelIdSet.size > 0) {
+        const { data: reviewsData, error: reviewsError } = await supabaseClient
+            .from("reviews")
+            .select("rating, bookings(room_id, rooms(hotel_id))");
+
+        if (!reviewsError) {
+            const sumByHotel = new Map<string, { sum: number; count: number }>();
+            for (const r of reviewsData ?? []) {
+                const rating = Number((r as { rating?: unknown }).rating);
+                if (!Number.isFinite(rating)) continue;
+                const hid = (r as { bookings?: { rooms?: { hotel_id?: unknown } } }).bookings?.rooms?.hotel_id;
+                if (typeof hid !== "string" || !hotelIdSet.has(hid)) continue;
+                const cur = sumByHotel.get(hid) ?? { sum: 0, count: 0 };
+                cur.sum += rating;
+                cur.count += 1;
+                sumByHotel.set(hid, cur);
+            }
+            for (const h of result) {
+                const hid = h.id as string | undefined;
+                if (!hid) continue;
+                const agg = sumByHotel.get(hid);
+                (h as Record<string, unknown>).review_count = agg?.count ?? 0;
+                (h as Record<string, unknown>).average_rating =
+                    agg && agg.count > 0 ? agg.sum / agg.count : null;
+            }
+        } else {
+            for (const h of result) {
+                (h as Record<string, unknown>).review_count = 0;
+                (h as Record<string, unknown>).average_rating = null;
+            }
+        }
+    }
+
+    // Add signed profile_image_url for each hotel (when present)
+    for (const row of result) {
+        const profileImage = (row as { profile_image?: string | null }).profile_image;
+        if (profileImage) {
+            if (/^https?:\/\//i.test(profileImage)) {
+                (row as Record<string, unknown>).profile_image_url = profileImage;
+            } else {
+                const { data: signed } = await supabaseAdmin.storage
+                    .from("hotel-assets")
+                    .createSignedUrl(profileImage, 3600);
+                if (signed?.signedUrl) (row as Record<string, unknown>).profile_image_url = signed.signedUrl;
+            }
+        }
+    }
+
+    res.json(result);
+});
+
+/** GET /api/hotels/filters — dynamic filter options (price bounds + amenities) */
+router.get("/hotels/filters", async (_req, res) => {
+    const { data, error } = await supabaseClient
+        .from("rooms")
+        .select("base_price_night, amenities, hotels!inner(verification_status)")
+        .eq("is_available", true)
+        .eq("hotels.verification_status", "verified");
+
+    if (error) {
+        res.status(500).json({ error: "Failed to load hotel filters" });
+        return;
+    }
+
+    let minPrice: number | null = null;
+    let maxPrice: number | null = null;
+    const amenitySet = new Set<string>();
+
+    for (const row of data ?? []) {
+        const priceRaw = (row as { base_price_night?: unknown }).base_price_night;
+        const price = typeof priceRaw === "number" ? priceRaw : Number(priceRaw);
+        if (Number.isFinite(price)) {
+            minPrice = minPrice == null ? price : Math.min(minPrice, price);
+            maxPrice = maxPrice == null ? price : Math.max(maxPrice, price);
+        }
+
+        const amenities = (row as { amenities?: unknown }).amenities;
+        if (Array.isArray(amenities)) {
+            for (const a of amenities) {
+                if (typeof a === "string" && a.trim()) amenitySet.add(a.trim());
+            }
+        }
+    }
+
+    res.json({
+        price: { min: minPrice, max: maxPrice },
+        amenities: Array.from(amenitySet).sort((a, b) => a.localeCompare(b))
+    });
 });
 
 router.get("/hotels/:id", async (req, res) => {
@@ -1327,7 +1502,34 @@ router.get("/hotel/bookings", authenticate, requireRole("hotel"), async (req, re
         return;
     }
 
-    res.json(data);
+    const bookings = (data ?? []) as Array<Record<string, unknown>>;
+    const userIds = Array.from(
+        new Set(bookings.map((b) => b.user_id).filter((id): id is string => typeof id === "string"))
+    );
+
+    const guestById = new Map<string, { email: string | null; full_name: string | null }>();
+    if (userIds.length > 0) {
+        const { data: profiles } = await supabaseAdmin
+            .from("profiles")
+            .select("id, email, full_name")
+            .in("id", userIds);
+        for (const p of profiles ?? []) {
+            guestById.set(p.id, {
+                email: (p as { email?: string | null }).email ?? null,
+                full_name: (p as { full_name?: string | null }).full_name ?? null
+            });
+        }
+    }
+
+    for (const b of bookings) {
+        const uid = b.user_id as string | undefined;
+        (b as Record<string, unknown>).guest = guestById.get(uid ?? "") ?? {
+            email: null,
+            full_name: null
+        };
+    }
+
+    res.json(bookings);
 });
 
 /** GET /api/hotel/bookings/:id — single booking detail (must belong to hotel). */
