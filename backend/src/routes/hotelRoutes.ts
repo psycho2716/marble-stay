@@ -11,6 +11,27 @@ const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+/** Normalize hourly_available_hours: array of 0-23, or null when not offering hourly. */
+function normalizeHourlyAvailableHours(
+    raw: unknown,
+    offerHourly: boolean
+): number[] | null {
+    if (!offerHourly) return null;
+    if (!raw) return null;
+    const arr = Array.isArray(raw) ? raw : (typeof raw === "string" ? (() => {
+        try {
+            return JSON.parse(raw) as unknown;
+        } catch {
+            return null;
+        }
+    })() : null);
+    if (!Array.isArray(arr)) return null;
+    const hours = arr
+        .map((h) => (typeof h === "number" ? h : Number(h)))
+        .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+    return [...new Set(hours)].sort((a, b) => a - b);
+}
+
 /** Handler for hotel registration (no auth required). */
 async function handleHotelRegister(
     req: import("express").Request,
@@ -110,7 +131,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
     const { data: reviewsData, error: reviewsError } = await supabaseClient
         .from("reviews")
         .select(
-            "rating, bookings(room_id, rooms(hotel_id, hotels(id, name, address, images, verification_status)))"
+            "rating, bookings(room_id, rooms(hotel_id, hotels(id, name, address, images, profile_image, verification_status)))"
         );
 
     if (reviewsError) {
@@ -129,6 +150,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
                     name: string;
                     address: string | null;
                     images: string[] | null;
+                    profile_image: string | null;
                     verification_status: string;
                 } | null;
             } | null;
@@ -139,7 +161,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
     const byHotel = new Map<
         string,
         {
-            hotel: { id: string; name: string; address: string | null; images: string[] | null };
+            hotel: { id: string; name: string; address: string | null; images: string[] | null; profile_image: string | null };
             ratings: number[];
         }
     >();
@@ -154,7 +176,8 @@ router.get("/hotels/top-rated", async (_req, res) => {
                     id: hotel.id,
                     name: hotel.name,
                     address: hotel.address ?? null,
-                    images: hotel.images ?? null
+                    images: hotel.images ?? null,
+                    profile_image: hotel.profile_image ?? null
                 },
                 ratings: [r.rating]
             });
@@ -163,7 +186,16 @@ router.get("/hotels/top-rated", async (_req, res) => {
         }
     }
 
-    let result = Array.from(byHotel.entries())
+    let result: Array<{
+        id: string;
+        name: string;
+        address: string | null;
+        images: string[] | null;
+        profile_image?: string | null;
+        profile_image_url?: string | null;
+        average_rating: number;
+        review_count: number;
+    }> = Array.from(byHotel.entries())
         .map(([, v]) => ({
             ...v.hotel,
             average_rating: v.ratings.reduce((a, b) => a + b, 0) / v.ratings.length,
@@ -175,17 +207,29 @@ router.get("/hotels/top-rated", async (_req, res) => {
     if (result.length === 0) {
         const { data: fallback } = await supabaseClient
             .from("hotels")
-            .select("id, name, address, images")
+            .select("id, name, address, images, profile_image")
             .eq("verification_status", "verified")
             .order("created_at", { ascending: false })
             .limit(6);
         result = (fallback ?? []).map((h) => ({
             ...h,
-            address: h.address ?? null,
-            images: h.images ?? null,
+            address: (h as { address?: string | null }).address ?? null,
+            images: (h as { images?: string[] | null }).images ?? null,
+            profile_image: (h as { profile_image?: string | null }).profile_image ?? null,
             average_rating: 0,
-            review_count: 0 
+            review_count: 0
         }));
+    }
+
+    // Add signed profile_image_url for each hotel
+    for (const row of result) {
+        const profileImage = (row as { profile_image?: string | null }).profile_image;
+        if (profileImage) {
+            const { data: signed } = await supabaseAdmin.storage
+                .from("hotel-assets")
+                .createSignedUrl(profileImage, 3600);
+            if (signed?.signedUrl) (row as Record<string, unknown>).profile_image_url = signed.signedUrl;
+        }
     }
 
     res.json(result);
@@ -221,7 +265,7 @@ router.get("/hotels/:id", async (req, res) => {
         return;
     }
 
-    const { data: rooms, error: roomsError } = await supabaseClient
+    const { data: roomsRaw, error: roomsError } = await supabaseClient
         .from("rooms")
         .select("*")
         .eq("hotel_id", hotelId)
@@ -232,7 +276,113 @@ router.get("/hotels/:id", async (req, res) => {
         return;
     }
 
-    res.json({ hotel, rooms });
+    const rooms: Record<string, unknown>[] = [];
+    for (const room of roomsRaw ?? []) {
+        const r = { ...room } as Record<string, unknown>;
+        const media = (room.media as { type?: string; path: string }[] | null) ?? [];
+        const firstImage = media.find((m) => m?.path && (m.type === "image" || !m.type));
+        if (firstImage?.path) {
+            const { data: signed } = await supabaseAdmin.storage
+                .from("hotel-assets")
+                .createSignedUrl(firstImage.path, 3600);
+            if (signed?.signedUrl) r.main_image_url = signed.signedUrl;
+        }
+        rooms.push(r);
+    }
+
+    const outHotel: Record<string, unknown> = { ...hotel };
+    if (hotel.profile_image) {
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(hotel.profile_image, 3600);
+        if (signed?.signedUrl) outHotel.profile_image_url = signed.signedUrl;
+    }
+    if (hotel.cover_image) {
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(hotel.cover_image, 3600);
+        if (signed?.signedUrl) outHotel.cover_image_url = signed.signedUrl;
+    }
+    res.json({ hotel: outHotel, rooms });
+});
+
+/** GET /api/rooms/:id — single room detail (for view room page; room must belong to verified hotel). */
+router.get("/rooms/:id", async (req, res) => {
+    const roomId = req.params.id;
+
+    const { data: row, error: roomError } = await supabaseClient
+        .from("rooms")
+        .select(
+            "*, hotels!inner(id, name, address, verification_status, payment_qr_image, payment_account_name, payment_account_number)"
+        )
+        .eq("id", roomId)
+        .single();
+
+    if (roomError || !row) {
+        res.status(404).json({ error: "Room not found" });
+        return;
+    }
+
+    const room = row as {
+        hotels: {
+            verification_status: string;
+            name: string;
+            address: string;
+            payment_qr_image?: string | null;
+            payment_account_name?: string | null;
+            payment_account_number?: string | null;
+        };
+        hotel_id: string;
+        media?: { type: string; path: string }[];
+    };
+    if (!room.hotels || room.hotels.verification_status !== "verified") {
+        res.status(404).json({ error: "Room not found" });
+        return;
+    }
+
+    const media = room.media ?? [];
+    const mediaWithUrls: { type: string; path: string; url: string }[] = [];
+    for (const item of media) {
+        if (!item?.path) continue;
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(item.path, 3600);
+        if (signed?.signedUrl) {
+            mediaWithUrls.push({
+                type: item.type || "image",
+                path: item.path,
+                url: signed.signedUrl
+            });
+        }
+    }
+
+    const hotels = room.hotels;
+    const hotelPayload: {
+        id: string;
+        name: string;
+        address: string;
+        payment_qr_image_url?: string;
+        payment_account_name?: string | null;
+        payment_account_number?: string | null;
+    } = {
+        id: room.hotel_id,
+        name: hotels.name,
+        address: hotels.address,
+        payment_account_name: hotels.payment_account_name ?? null,
+        payment_account_number: hotels.payment_account_number ?? null
+    };
+    if (hotels.payment_qr_image) {
+        const { data: qrSigned } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(hotels.payment_qr_image, 3600);
+        if (qrSigned?.signedUrl) hotelPayload.payment_qr_image_url = qrSigned.signedUrl;
+    }
+
+    const { hotels: _h, ...roomData } = room;
+    res.json({
+        room: { ...roomData, media: mediaWithUrls },
+        hotel: hotelPayload
+    });
 });
 
 router.get("/rooms/:id/availability", async (req, res) => {
@@ -250,6 +400,70 @@ router.get("/rooms/:id/availability", async (req, res) => {
     }
 
     res.json(data);
+});
+
+/** GET /api/rooms/:id/hourly-slots?date=YYYY-MM-DD — available hours for hourly booking on a date (public). */
+router.get("/rooms/:id/hourly-slots", async (req, res) => {
+    const roomId = req.params.id;
+    const date = req.query.date as string | undefined;
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ error: "Query 'date' required (YYYY-MM-DD)" });
+        return;
+    }
+
+    const { data: room, error: roomError } = await supabaseClient
+        .from("rooms")
+        .select("id, hourly_available_hours, hotels!inner(verification_status)")
+        .eq("id", roomId)
+        .single();
+
+    const hotels = room?.hotels as { verification_status: string } | { verification_status: string }[] | undefined;
+    const status = Array.isArray(hotels) ? hotels[0]?.verification_status : hotels?.verification_status;
+    if (roomError || !room || status !== "verified") {
+        res.status(404).json({ error: "Room not found" });
+        return;
+    }
+
+    const { data: slots, error } = await supabaseClient
+        .from("room_hourly_slots")
+        .select("hour")
+        .eq("room_id", roomId)
+        .eq("date", date)
+        .eq("available", true)
+        .order("hour", { ascending: true });
+
+    if (error) {
+        res.status(500).json({ error: "Failed to load hourly slots" });
+        return;
+    }
+
+    let hours = (slots ?? []).map((s) => Number(s.hour)).filter((h) => h >= 0 && h <= 23);
+    if (hours.length === 0 && room.hourly_available_hours && Array.isArray(room.hourly_available_hours)) {
+        hours = (room.hourly_available_hours as number[]).filter((h) => h >= 0 && h <= 23);
+    }
+
+    const dateStart = `${date}T00:00:00.000Z`;
+    const dateEnd = new Date(new Date(date).getTime() + 86400000).toISOString();
+    const { data: existingBookings } = await supabaseAdmin
+        .from("bookings")
+        .select("hourly_hours")
+        .eq("room_id", roomId)
+        .eq("booking_type", "hourly")
+        .in("status", ["pending", "confirmed"])
+        .gte("check_in", dateStart)
+        .lt("check_in", dateEnd);
+
+    const takenSet = new Set<number>();
+    for (const b of existingBookings ?? []) {
+        const arr = b.hourly_hours as number[] | null;
+        if (Array.isArray(arr)) {
+            for (const h of arr) {
+                if (Number.isInteger(h) && h >= 0 && h <= 23) takenSet.add(h);
+            }
+        }
+    }
+    hours = hours.filter((h) => !takenSet.has(h));
+    res.json({ hours });
 });
 
 router.get("/me/hotel", authenticate, requireRole("hotel"), async (req, res) => {
@@ -294,6 +508,12 @@ router.get("/me/hotel", authenticate, requireRole("hotel"), async (req, res) => 
             .createSignedUrl(hotel.cover_image, 3600);
         if (signed?.signedUrl) out.cover_image_url = signed.signedUrl;
     }
+    if (hotel.payment_qr_image) {
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(hotel.payment_qr_image, 3600);
+        if (signed?.signedUrl) out.payment_qr_image_url = signed.signedUrl;
+    }
     res.json(out);
 });
 
@@ -315,13 +535,25 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
         return;
     }
 
-    const { description, bio, opening_hours, check_in_time, check_out_time } = req.body;
+    const {
+        description,
+        bio,
+        opening_hours,
+        check_in_time,
+        check_out_time,
+        payment_account_name,
+        payment_account_number
+    } = req.body;
     const updates: Record<string, unknown> = {};
     if (description !== undefined) updates.description = description;
     if (bio !== undefined) updates.bio = bio;
     if (opening_hours !== undefined) updates.opening_hours = opening_hours ?? {};
     if (check_in_time !== undefined) updates.check_in_time = check_in_time || null;
     if (check_out_time !== undefined) updates.check_out_time = check_out_time || null;
+    if (payment_account_name !== undefined)
+        updates.payment_account_name = payment_account_name || null;
+    if (payment_account_number !== undefined)
+        updates.payment_account_number = payment_account_number || null;
 
     if (Object.keys(updates).length === 0) {
         res.status(400).json({ error: "No fields to update" });
@@ -462,6 +694,60 @@ router.post(
     }
 );
 
+/** POST /api/hotel/payment-qr — upload payment QR code image for online payment. */
+router.post(
+    "/hotel/payment-qr",
+    authenticate,
+    requireRole("hotel"),
+    upload.single("payment_qr_image"),
+    async (req, res) => {
+        if (!req.supabaseAccessToken) {
+            res.status(401).json({
+                error: "Supabase session required (send x-supabase-access-token)"
+            });
+            return;
+        }
+        const file = req.file;
+        if (!file) {
+            res.status(400).json({ error: "No file uploaded. Send payment_qr_image." });
+            return;
+        }
+        if (!file.mimetype?.startsWith("image/")) {
+            res.status(400).json({ error: "File must be an image (JPEG, PNG, WebP)." });
+            return;
+        }
+        const db = createSupabaseClientForUser(req.supabaseAccessToken);
+        const { data: profile, error: profileError } = await db
+            .from("profiles")
+            .select("hotel_id")
+            .eq("id", req.user!.sub)
+            .single();
+        if (profileError || !profile?.hotel_id) {
+            res.status(404).json({ error: "No linked hotel found" });
+            return;
+        }
+        const ext =
+            file.mimetype === "image/png" ? "png" : file.mimetype === "image/webp" ? "webp" : "jpg";
+        const filePath = `payment-qr/${profile.hotel_id}/qr.${ext}`;
+        const { error: uploadError } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+        if (uploadError) {
+            res.status(500).json({ error: uploadError.message ?? "Failed to upload image" });
+            return;
+        }
+        const { error: updateError } = await supabaseAdmin
+            .from("hotels")
+            .update({ payment_qr_image: filePath })
+            .eq("id", profile.hotel_id);
+        if (updateError) {
+            res.status(500).json({ error: "Failed to save payment QR" });
+            return;
+        }
+        res.json({ payment_qr_image: filePath, message: "Payment QR updated." });
+    }
+);
+
 /** POST /api/hotel/permit — upload business permit (legal document) for the authenticated hotel. */
 router.post(
     "/hotel/permit",
@@ -592,15 +878,33 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         return;
     }
 
-    const { name, room_type, base_price_night, hourly_rate, capacity, amenities, description, offer_hourly, media, bathroom_count, bathroom_shared } = req.body;
+    const {
+        name,
+        room_type,
+        base_price_night,
+        hourly_rate,
+        capacity,
+        amenities,
+        description,
+        offer_hourly,
+        media,
+        bathroom_count,
+        bathroom_shared,
+        hourly_available_hours: hourlyAvailableHoursRaw
+    } = req.body;
     if (!name || !room_type || base_price_night == null || !capacity) {
-        res.status(400).json({ error: "Missing required fields: name, room_type, base_price_night, capacity" });
+        res.status(400).json({
+            error: "Missing required fields: name, room_type, base_price_night, capacity"
+        });
         return;
     }
     const basePrice = Number(base_price_night);
     const cap = Number(capacity);
     const offerHourly = Boolean(offer_hourly);
-    const hourly = offerHourly && hourly_rate != null && String(hourly_rate).trim() !== "" ? Number(hourly_rate) : null;
+    const hourly =
+        offerHourly && hourly_rate != null && String(hourly_rate).trim() !== ""
+            ? Number(hourly_rate)
+            : null;
     if (Number.isNaN(basePrice) || basePrice < 0 || Number.isNaN(cap) || cap < 1) {
         res.status(400).json({ error: "base_price_night must be >= 0 and capacity must be >= 1" });
         return;
@@ -609,12 +913,16 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         res.status(400).json({ error: "hourly_rate must be >= 0 when provided" });
         return;
     }
-    const bathroomCnt = bathroom_count != null && String(bathroom_count).trim() !== "" ? Number(bathroom_count) : null;
+    const bathroomCnt =
+        bathroom_count != null && String(bathroom_count).trim() !== ""
+            ? Number(bathroom_count)
+            : null;
     if (bathroomCnt != null && (Number.isNaN(bathroomCnt) || bathroomCnt < 0)) {
         res.status(400).json({ error: "bathroom_count must be >= 0 when provided" });
         return;
     }
-    const bathroomShared = bathroom_shared === undefined || bathroom_shared === null ? null : Boolean(bathroom_shared);
+    const bathroomShared =
+        bathroom_shared === undefined || bathroom_shared === null ? null : Boolean(bathroom_shared);
     const mediaArr = Array.isArray(media) ? media : [];
     if (mediaArr.length > 10) {
         res.status(400).json({ error: "Maximum 10 media items (images + 1 video)" });
@@ -626,6 +934,8 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         return;
     }
 
+    const hourlyAvailableHours = normalizeHourlyAvailableHours(hourlyAvailableHoursRaw, offerHourly);
+
     const payload: Record<string, unknown> = {
         hotel_id: profile.hotel_id,
         name: String(name).trim(),
@@ -634,6 +944,7 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         capacity: cap,
         offer_hourly: offerHourly,
         hourly_rate: hourly ?? null,
+        hourly_available_hours: hourlyAvailableHours,
         amenities: Array.isArray(amenities) ? amenities : [],
         description: description != null ? String(description).trim() || null : null,
         media: mediaArr,
@@ -641,11 +952,7 @@ router.post("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res)
         bathroom_shared: bathroomShared
     };
 
-    const { data, error } = await supabaseAdmin
-        .from("rooms")
-        .insert(payload)
-        .select("*")
-        .single();
+    const { data, error } = await supabaseAdmin.from("rooms").insert(payload).select("*").single();
 
     if (error) {
         res.status(500).json({ error: error.message ?? "Failed to create room" });
@@ -673,7 +980,20 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
     }
 
     const roomId = req.params.id;
-    const { name, room_type, base_price_night, hourly_rate, capacity, amenities, description, offer_hourly, media, bathroom_count, bathroom_shared } = req.body;
+    const {
+        name,
+        room_type,
+        base_price_night,
+        hourly_rate,
+        capacity,
+        amenities,
+        description,
+        offer_hourly,
+        media,
+        bathroom_count,
+        bathroom_shared,
+        hourly_available_hours: hourlyAvailableHoursRaw
+    } = req.body;
 
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = String(name).trim();
@@ -688,7 +1008,10 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
         }
         updates.base_price_night = v;
     }
-    if (offer_hourly === false) updates.hourly_rate = null;
+    if (offer_hourly === false) {
+        updates.hourly_rate = null;
+        updates.hourly_available_hours = null;
+    }
     if (hourly_rate !== undefined) {
         if (offer_hourly && hourly_rate != null && String(hourly_rate).trim() !== "") {
             const v = Number(hourly_rate);
@@ -701,6 +1024,12 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
             updates.hourly_rate = null;
         }
     }
+    if (hourlyAvailableHoursRaw !== undefined) {
+        updates.hourly_available_hours = normalizeHourlyAvailableHours(
+            hourlyAvailableHoursRaw,
+            offer_hourly !== false
+        );
+    }
     if (capacity !== undefined) {
         const v = Number(capacity);
         if (Number.isNaN(v) || v < 1) {
@@ -711,7 +1040,10 @@ router.patch("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req,
     }
     if (amenities !== undefined) updates.amenities = Array.isArray(amenities) ? amenities : [];
     if (bathroom_count !== undefined) {
-        const v = bathroom_count == null || String(bathroom_count).trim() === "" ? null : Number(bathroom_count);
+        const v =
+            bathroom_count == null || String(bathroom_count).trim() === ""
+                ? null
+                : Number(bathroom_count);
         if (v !== null && (Number.isNaN(v) || v < 0)) {
             res.status(400).json({ error: "bathroom_count must be >= 0" });
             return;
@@ -797,7 +1129,9 @@ router.post(
     upload.single("media"),
     async (req, res) => {
         if (!req.supabaseAccessToken) {
-            res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+            res.status(401).json({
+                error: "Supabase session required (send x-supabase-access-token)"
+            });
             return;
         }
         const db = createSupabaseClientForUser(req.supabaseAccessToken);
@@ -822,7 +1156,9 @@ router.post(
         const isVideo = file.mimetype?.startsWith("video/") ?? false;
         const isImage = file.mimetype?.startsWith("image/") ?? false;
         if (!isImage && !isVideo) {
-            res.status(400).json({ error: "File must be an image (JPEG, PNG, WebP, GIF) or video (MP4, WebM)." });
+            res.status(400).json({
+                error: "File must be an image (JPEG, PNG, WebP, GIF) or video (MP4, WebM)."
+            });
             return;
         }
 
@@ -849,13 +1185,23 @@ router.post(
             return;
         }
 
-        const ext = isVideo ? (file.mimetype?.includes("webm") ? "webm" : "mp4") : (file.mimetype === "image/png" ? "png" : file.mimetype === "image/webp" ? "webp" : "jpg");
+        const ext = isVideo
+            ? file.mimetype?.includes("webm")
+                ? "webm"
+                : "mp4"
+            : file.mimetype === "image/png"
+              ? "png"
+              : file.mimetype === "image/webp"
+                ? "webp"
+                : "jpg";
         const safeName = (file.originalname || "file").replace(/[^a-zA-Z0-9.-]/g, "_");
         const filePath = `room-media/${profile.hotel_id}/${roomId}/${Date.now()}-${safeName}.${ext}`;
 
         const MAX_VIDEO_SIZE_MB = 100;
         if (isVideo && file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-            res.status(400).json({ error: `Video is too large. Maximum size is ${MAX_VIDEO_SIZE_MB}MB.` });
+            res.status(400).json({
+                error: `Video is too large. Maximum size is ${MAX_VIDEO_SIZE_MB}MB.`
+            });
             return;
         }
 
@@ -867,7 +1213,9 @@ router.post(
             const msg = uploadError.message ?? "Failed to upload file";
             const isSizeError = /exceeded|maximum.*size|too large/i.test(msg);
             res.status(isSizeError ? 400 : 500).json({
-                error: isSizeError ? `File is too large. Maximum size is ${MAX_VIDEO_SIZE_MB}MB for videos.` : msg
+                error: isSizeError
+                    ? `File is too large. Maximum size is ${MAX_VIDEO_SIZE_MB}MB for videos.`
+                    : msg
             });
             return;
         }
@@ -911,7 +1259,7 @@ router.get("/hotel/bookings", authenticate, requireRole("hotel"), async (req, re
 
     const { data, error } = await db
         .from("bookings")
-        .select("*, rooms!inner(name)")
+        .select("*, rooms!inner(name, hotel_id)")
         .eq("rooms.hotel_id", profile.hotel_id)
         .order("created_at", { ascending: false });
 
@@ -921,6 +1269,235 @@ router.get("/hotel/bookings", authenticate, requireRole("hotel"), async (req, re
     }
 
     res.json(data);
+});
+
+/** GET /api/hotel/bookings/:id — single booking detail (must belong to hotel). */
+router.get("/hotel/bookings/:id", authenticate, requireRole("hotel"), async (req, res) => {
+    if (!req.supabaseAccessToken) {
+        res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+        return;
+    }
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const bookingId = req.params.id;
+
+    const { data: profile, error: profileError } = await db
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const { data: booking, error } = await db
+        .from("bookings")
+        .select("*, rooms!inner(id, name, hotel_id)")
+        .eq("id", bookingId)
+        .single();
+
+    if (error || !booking) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const room = (booking as unknown as { rooms?: { hotel_id: string } }).rooms;
+    if (!room || room.hotel_id !== profile.hotel_id) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const userId = (booking as { user_id: string }).user_id;
+    const { data: guestProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("email, full_name")
+        .eq("id", userId)
+        .single();
+
+    const guest = guestProfile
+        ? { email: guestProfile.email ?? null, full_name: guestProfile.full_name ?? null }
+        : { email: null, full_name: null };
+
+    const out: Record<string, unknown> = { ...booking, guest };
+    const receiptPath = (booking as { payment_receipt_path?: string | null }).payment_receipt_path;
+    if (receiptPath) {
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(receiptPath, 3600);
+        if (signed?.signedUrl) out.payment_receipt_url = signed.signedUrl;
+    }
+
+    res.json(out);
+});
+
+/** PATCH /api/hotel/bookings/:id/confirm — set status to confirmed. */
+router.patch("/hotel/bookings/:id/confirm", authenticate, requireRole("hotel"), async (req, res) => {
+    if (!req.supabaseAccessToken) {
+        res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+        return;
+    }
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const bookingId = req.params.id;
+
+    const { data: profile, error: profileError } = await db
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const { data: booking, error: fetchError } = await db
+        .from("bookings")
+        .select("id, status, rooms!inner(hotel_id)")
+        .eq("id", bookingId)
+        .single();
+
+    if (fetchError || !booking) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const room = (booking as unknown as { rooms?: { hotel_id: string } }).rooms;
+    if (!room || room.hotel_id !== profile.hotel_id) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    if ((booking as { status: string }).status !== "pending") {
+        res.status(400).json({ error: "Only pending bookings can be confirmed" });
+        return;
+    }
+
+    const { data: updated, error: updateError } = await db
+        .from("bookings")
+        .update({ status: "confirmed" })
+        .eq("id", bookingId)
+        .select("*")
+        .single();
+
+    if (updateError) {
+        res.status(500).json({ error: "Failed to confirm booking" });
+        return;
+    }
+    res.json(updated);
+});
+
+/** PATCH /api/hotel/bookings/:id/decline — set status to cancelled and store reason. */
+router.patch("/hotel/bookings/:id/decline", authenticate, requireRole("hotel"), async (req, res) => {
+    const bookingId = req.params.id;
+    const { reason } = req.body as { reason?: string };
+
+    if (!reason || typeof reason !== "string" || !reason.trim()) {
+        res.status(400).json({ error: "Reason for declining is required" });
+        return;
+    }
+
+    const { data: profile, error: profileError } = await supabaseAdmin
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const { data: booking, error: fetchError } = await supabaseAdmin
+        .from("bookings")
+        .select("id, status, room_id")
+        .eq("id", bookingId)
+        .single();
+
+    if (fetchError || !booking) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const { data: room } = await supabaseAdmin
+        .from("rooms")
+        .select("hotel_id")
+        .eq("id", (booking as { room_id: string }).room_id)
+        .single();
+
+    if (!room || (room as { hotel_id: string }).hotel_id !== profile.hotel_id) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    if ((booking as { status: string }).status !== "pending") {
+        res.status(400).json({ error: "Only pending bookings can be declined" });
+        return;
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+        .from("bookings")
+        .update({ status: "cancelled", decline_reason: reason.trim() })
+        .eq("id", bookingId)
+        .select("*")
+        .single();
+
+    if (updateError) {
+        res.status(500).json({ error: updateError.message ?? "Failed to decline booking" });
+        return;
+    }
+    res.json(updated);
+});
+
+/** PATCH /api/hotel/bookings/:id/mark-paid — set payment_status to paid. */
+router.patch("/hotel/bookings/:id/mark-paid", authenticate, requireRole("hotel"), async (req, res) => {
+    if (!req.supabaseAccessToken) {
+        res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+        return;
+    }
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const bookingId = req.params.id;
+
+    const { data: profile, error: profileError } = await db
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const { data: booking, error: fetchError } = await db
+        .from("bookings")
+        .select("id, payment_status, rooms!inner(hotel_id)")
+        .eq("id", bookingId)
+        .single();
+
+    if (fetchError || !booking) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const room = (booking as unknown as { rooms?: { hotel_id: string } }).rooms;
+    if (!room || room.hotel_id !== profile.hotel_id) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+    }
+
+    const { data: updated, error: updateError } = await db
+        .from("bookings")
+        .update({ payment_status: "paid" })
+        .eq("id", bookingId)
+        .select("*")
+        .single();
+
+    if (updateError) {
+        res.status(500).json({ error: "Failed to update payment status" });
+        return;
+    }
+    res.json(updated);
 });
 
 export default router;

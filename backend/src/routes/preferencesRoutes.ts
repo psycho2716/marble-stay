@@ -1,15 +1,21 @@
 import { Router } from "express";
-import { createSupabaseClientForUser } from "../config/supabaseClient";
+import { supabaseAdmin, createSupabaseClientForUser } from "../config/supabaseClient";
 import { authenticate } from "../middleware/auth";
 
 const router = Router();
 
+const emptyPrefs = {
+  budget_min: null,
+  budget_max: null,
+  amenities: [] as string[],
+  travel_needs: null as string | null,
+  hotel_preferences: null as string | null,
+};
+
 router.get("/preferences", authenticate, async (req, res) => {
-  if (!req.supabaseAccessToken) {
-    res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
-    return;
-  }
-  const db = createSupabaseClientForUser(req.supabaseAccessToken);
+  const db = req.supabaseAccessToken
+    ? createSupabaseClientForUser(req.supabaseAccessToken)
+    : supabaseAdmin;
 
   const { data, error } = await db
     .from("user_preferences")
@@ -22,21 +28,22 @@ router.get("/preferences", authenticate, async (req, res) => {
     return;
   }
 
-  res.json(data ?? { budget_min: null, budget_max: null, amenities: [] });
+  res.json(data ?? emptyPrefs);
 });
 
 router.patch("/preferences", authenticate, async (req, res) => {
-  if (!req.supabaseAccessToken) {
-    res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
-    return;
-  }
-  const db = createSupabaseClientForUser(req.supabaseAccessToken);
-  const { budget_min, budget_max, amenities } = req.body;
+  const db = req.supabaseAccessToken
+    ? createSupabaseClientForUser(req.supabaseAccessToken)
+    : supabaseAdmin;
+
+  const { budget_min, budget_max, amenities, travel_needs, hotel_preferences } = req.body;
 
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (budget_min !== undefined) payload.budget_min = budget_min == null ? null : Number(budget_min);
   if (budget_max !== undefined) payload.budget_max = budget_max == null ? null : Number(budget_max);
   if (amenities !== undefined) payload.amenities = Array.isArray(amenities) ? amenities : [];
+  if (travel_needs !== undefined) payload.travel_needs = travel_needs == null || travel_needs === "" ? null : String(travel_needs).trim();
+  if (hotel_preferences !== undefined) payload.hotel_preferences = hotel_preferences == null || hotel_preferences === "" ? null : String(hotel_preferences).trim();
 
   const { data, error } = await db
     .from("user_preferences")
