@@ -456,6 +456,8 @@ router.get("/hotels/filters", async (_req, res) => {
 
 router.get("/hotels/:id", async (req, res) => {
     const hotelId = req.params.id;
+    const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 6));
 
     const { data: hotel, error: hotelError } = await supabaseClient
         .from("hotels")
@@ -469,12 +471,28 @@ router.get("/hotels/:id", async (req, res) => {
         return;
     }
 
+    const { count: totalRooms, error: countError } = await supabaseClient
+        .from("rooms")
+        .select("id", { count: "exact", head: true })
+        .eq("hotel_id", hotelId)
+        .eq("is_available", true);
+
+    if (countError) {
+        res.status(500).json({ error: "Failed to load rooms" });
+        return;
+    }
+    const total = totalRooms ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const pageClamped = Math.min(page, totalPages);
+    const from = (pageClamped - 1) * limit;
+
     const { data: roomsRaw, error: roomsError } = await supabaseClient
         .from("rooms")
         .select("*")
         .eq("hotel_id", hotelId)
         .eq("is_available", true)
-        .order("base_price_night", { ascending: true });
+        .order("base_price_night", { ascending: true })
+        .range(from, from + limit - 1);
 
     if (roomsError) {
         res.status(500).json({ error: "Failed to load rooms" });
@@ -495,7 +513,45 @@ router.get("/hotels/:id", async (req, res) => {
         rooms.push(r);
     }
 
-    const outHotel: Record<string, unknown> = { ...hotel };
+    const { data: reviewsData } = await supabaseClient
+        .from("reviews")
+        .select("rating, bookings(room_id, rooms(hotel_id))");
+    const sumByHotel = new Map<string, { sum: number; count: number }>();
+    for (const r of reviewsData ?? []) {
+        const rating = Number((r as { rating?: unknown }).rating);
+        if (!Number.isFinite(rating)) continue;
+        const hid = (r as { bookings?: { rooms?: { hotel_id?: unknown } } }).bookings?.rooms?.hotel_id;
+        if (typeof hid !== "string" || hid !== hotelId) continue;
+        const cur = sumByHotel.get(hotelId) ?? { sum: 0, count: 0 };
+        cur.sum += rating;
+        cur.count += 1;
+        sumByHotel.set(hotelId, cur);
+    }
+    const agg = sumByHotel.get(hotelId);
+    const reviewCount = agg?.count ?? 0;
+    const averageRating = agg && agg.count > 0 ? agg.sum / agg.count : null;
+
+    const { data: allRoomsForAmenities } = await supabaseClient
+        .from("rooms")
+        .select("amenities")
+        .eq("hotel_id", hotelId)
+        .eq("is_available", true);
+    const amenitySet = new Set<string>();
+    for (const row of allRoomsForAmenities ?? []) {
+        const amenities = (row as { amenities?: unknown }).amenities;
+        if (Array.isArray(amenities)) {
+            for (const a of amenities) {
+                if (typeof a === "string" && a.trim()) amenitySet.add(a.trim());
+            }
+        }
+    }
+
+    const outHotel: Record<string, unknown> = {
+        ...hotel,
+        average_rating: averageRating,
+        review_count: reviewCount,
+        amenities: Array.from(amenitySet).sort((a, b) => a.localeCompare(b))
+    };
     if (hotel.profile_image) {
         const { data: signed } = await supabaseAdmin.storage
             .from("hotel-assets")
@@ -508,7 +564,14 @@ router.get("/hotels/:id", async (req, res) => {
             .createSignedUrl(hotel.cover_image, 3600);
         if (signed?.signedUrl) outHotel.cover_image_url = signed.signedUrl;
     }
-    res.json({ hotel: outHotel, rooms });
+    res.json({
+        hotel: outHotel,
+        rooms,
+        total,
+        page: pageClamped,
+        limit,
+        totalPages
+    });
 });
 
 /** GET /api/rooms/:id — single room detail (for view room page; room must belong to verified hotel). */
