@@ -3,6 +3,12 @@ import type { Request } from "express";
 import multer from "multer";
 import { supabaseClient, supabaseAdmin, createSupabaseClientForUser } from "../config/supabaseClient";
 import { authenticate, type AuthPayload } from "../middleware/auth";
+import {
+  emitBookingMessage,
+  notifyHotelNewBooking,
+  notifyHotelReceiptUploaded,
+  notifyNewChatMessage
+} from "../realtime";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -299,9 +305,42 @@ router.post(
     }
 
     const { data: updated } = await db.from("bookings").select("*").eq("id", booking.id).single();
-    res.status(201).json(updated ?? booking);
+    const finalBooking = updated ?? booking;
+    if (roomHotelId && finalBooking && typeof (finalBooking as { id?: string }).id === "string") {
+      const { data: guestProf } = await supabaseAdmin
+        .from("profiles")
+        .select("full_name, email")
+        .eq("id", userId)
+        .single();
+      const gp = guestProf as { full_name?: string | null; email?: string | null } | null;
+      const guestLabel = gp?.full_name?.trim() || gp?.email?.trim() || "A guest";
+      try {
+        notifyHotelNewBooking(roomHotelId, (finalBooking as { id: string }).id, guestLabel);
+      } catch (e) {
+        console.warn("[realtime] notifyHotelNewBooking failed", e);
+      }
+    }
+    res.status(201).json(finalBooking);
   }
 );
+
+async function signedHotelCoverUrl(hotel: {
+  profile_image?: string | null;
+  images?: string[] | null;
+}): Promise<string | null> {
+  const tryPath = async (path: string | null | undefined) => {
+    const p = path?.trim();
+    if (!p) return null;
+    const { data: signed } = await supabaseAdmin.storage
+      .from("hotel-assets")
+      .createSignedUrl(p, 3600);
+    return signed?.signedUrl ?? null;
+  };
+  const fromProfile = await tryPath(hotel.profile_image ?? null);
+  if (fromProfile) return fromProfile;
+  const first = hotel.images?.find((x) => typeof x === "string" && x.trim());
+  return tryPath(first ?? null);
+}
 
 router.get(
   "/bookings",
@@ -314,7 +353,7 @@ router.get(
 
     const { data, error } = await db
       .from("bookings")
-      .select("*, rooms(name, hotels(name))")
+      .select("*, rooms(name, hotels(id, name, address, images, profile_image))")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -323,13 +362,46 @@ router.get(
       return;
     }
 
-    res.json(data ?? []);
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const coverByHotelId = new Map<string, string | null>();
+
+    const out = await Promise.all(
+      rows.map(async (b) => {
+        const room = b.rooms as { hotels?: unknown } | null | undefined;
+        const h = room?.hotels;
+        const hotel = (Array.isArray(h) ? h[0] : h) as
+          | {
+              id?: string;
+              name?: string | null;
+              address?: string | null;
+              images?: string[] | null;
+              profile_image?: string | null;
+            }
+          | null
+          | undefined;
+        let hotel_cover_url: string | null = null;
+        if (hotel?.id) {
+          if (!coverByHotelId.has(hotel.id)) {
+            coverByHotelId.set(hotel.id, await signedHotelCoverUrl(hotel));
+          }
+          hotel_cover_url = coverByHotelId.get(hotel.id) ?? null;
+        }
+        return { ...b, hotel_cover_url };
+      })
+    );
+
+    res.json(out);
   }
 );
 
 /** GET /api/bookings/:id/messages — guest or hotel staff for this booking. */
 router.get("/bookings/:bookingId/messages", authenticate, async (req: Request, res): Promise<void> => {
-  const bookingId = req.params.bookingId;
+  const rawBid = req.params.bookingId;
+  const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+  if (!bookingId) {
+    res.status(400).json({ error: "Invalid booking id" });
+    return;
+  }
   const userId = req.user!.sub;
   const role = req.user!.role;
 
@@ -396,7 +468,12 @@ router.get("/bookings/:bookingId/messages", authenticate, async (req: Request, r
 
 /** POST /api/bookings/:id/messages — send a message (guest or hotel for this booking). */
 router.post("/bookings/:bookingId/messages", authenticate, async (req: Request, res): Promise<void> => {
-  const bookingId = req.params.bookingId;
+  const rawBid = req.params.bookingId;
+  const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+  if (!bookingId) {
+    res.status(400).json({ error: "Invalid booking id" });
+    return;
+  }
   const userId = req.user!.sub;
   const role = req.user!.role;
   const raw = typeof req.body?.body === "string" ? req.body.body : "";
@@ -443,7 +520,7 @@ router.post("/bookings/:bookingId/messages", authenticate, async (req: Request, 
   const senderName =
     p?.full_name?.trim() || p?.email?.trim() || (senderRole === "hotel" ? "Hotel" : "Guest");
 
-  res.status(201).json({
+  const out = {
     id: ins.id,
     booking_id: bookingId,
     sender_id: ins.sender_id,
@@ -451,7 +528,38 @@ router.post("/bookings/:bookingId/messages", authenticate, async (req: Request, 
     created_at: ins.created_at,
     sender_role: senderRole,
     sender_name: senderName,
-  });
+  };
+
+  try {
+    emitBookingMessage(bookingId, out);
+    const { data: bRow } = await supabaseAdmin
+      .from("bookings")
+      .select("user_id, rooms!inner(hotel_id)")
+      .eq("id", bookingId)
+      .single();
+    const br = bRow as
+      | { user_id: string; rooms?: { hotel_id: string } | { hotel_id: string }[] }
+      | null;
+    if (br?.user_id) {
+      const room = Array.isArray(br.rooms) ? br.rooms[0] : br.rooms;
+      const hid = room?.hotel_id;
+      if (hid) {
+        await notifyNewChatMessage({
+          bookingId,
+          senderRole,
+          guestUserId: br.user_id,
+          hotelId: hid,
+          preview: ins.body,
+          senderName,
+          senderId: ins.sender_id,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn("[realtime] message emit failed", e);
+  }
+
+  res.status(201).json(out);
 });
 
 /** GET /api/bookings/:id — single booking detail for the authenticated guest (own booking only). */
@@ -459,7 +567,12 @@ router.get(
   "/bookings/:id",
   authenticate,
   async (req: Request, res): Promise<void> => {
-    const bookingId = req.params.id;
+    const rawId = req.params.id;
+    const bookingId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!bookingId) {
+      res.status(400).json({ error: "Invalid booking id" });
+      return;
+    }
     const userId = req.user!.sub;
 
     const { data: booking, error: bookingError } = await supabaseAdmin
@@ -549,7 +662,12 @@ router.post(
       res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
       return;
     }
-    const bookingId = req.params.id;
+    const rawId = req.params.id;
+    const bookingId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!bookingId) {
+      res.status(400).json({ error: "Invalid booking id" });
+      return;
+    }
     const userId = req.user!.sub;
     const receiptFile = req.file;
     if (!receiptFile || !/^image\//.test(receiptFile.mimetype)) {
@@ -623,6 +741,20 @@ router.post(
       res.status(500).json({ error: updateError.message ?? "Failed to save receipt" });
       return;
     }
+    try {
+      const roomId = (updated as { room_id: string }).room_id;
+      const { data: roomRow } = await supabaseAdmin
+        .from("rooms")
+        .select("hotel_id")
+        .eq("id", roomId)
+        .single();
+      const hid = (roomRow as { hotel_id?: string } | null)?.hotel_id;
+      if (hid) {
+        notifyHotelReceiptUploaded(hid, bookingId);
+      }
+    } catch (e) {
+      console.warn("[realtime] notifyHotelReceiptUploaded failed", e);
+    }
     res.status(200).json(updated);
   }
 );
@@ -632,7 +764,12 @@ router.post(
   "/bookings/:id/review",
   authenticate,
   async (req: Request, res): Promise<void> => {
-    const bookingId = req.params.id;
+    const rawId = req.params.id;
+    const bookingId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!bookingId) {
+      res.status(400).json({ error: "Invalid booking id" });
+      return;
+    }
     const userId = req.user!.sub;
     const { rating, comment } = req.body as { rating?: number; comment?: string | null };
 

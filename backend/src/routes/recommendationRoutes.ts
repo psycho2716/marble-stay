@@ -130,6 +130,23 @@ router.get(
       list = list.sort((a, b) => b.average_rating - a.average_rating);
     }
 
+    const { data: roomPriceRows } = await supabaseClient
+      .from("rooms")
+      .select("hotel_id, base_price_night");
+    const minPriceByHotel = new Map<string, number>();
+    for (const r of roomPriceRows ?? []) {
+      const row = r as { hotel_id: string; base_price_night: number | string };
+      const p = Number(row.base_price_night);
+      if (!Number.isFinite(p)) continue;
+      const cur = minPriceByHotel.get(row.hotel_id);
+      if (cur == null || p < cur) minPriceByHotel.set(row.hotel_id, p);
+    }
+    for (const row of list) {
+      const minP = minPriceByHotel.get(row.id);
+      (row as { min_price_night?: number | null }).min_price_night =
+        minP != null && Number.isFinite(minP) ? minP : null;
+    }
+
     // Attach signed profile_image_url
     for (const row of list) {
       if (row.profile_image) {

@@ -6,10 +6,50 @@ import {
     createSupabaseClientForUser
 } from "../config/supabaseClient";
 import { authenticate, requireRole } from "../middleware/auth";
+import {
+    notifyGuestBookingConfirmed,
+    notifyGuestBookingDeclined,
+    notifyGuestPaymentApproved,
+    notifyGuestReceiptRejected
+} from "../realtime";
 
 const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+/**
+ * Mark confirmed + paid bookings as `completed` once check-out has passed.
+ * Used before hotel booking lists so revenue and status stay accurate.
+ */
+async function autoMarkCompletedStaysForHotel(hotelId: string): Promise<void> {
+    const { data: hotelRooms, error: roomsErr } = await supabaseAdmin
+        .from("rooms")
+        .select("id")
+        .eq("hotel_id", hotelId);
+    if (roomsErr || !hotelRooms?.length) return;
+
+    const roomIds = hotelRooms.map((r) => (r as { id: string }).id);
+    const nowIso = new Date().toISOString();
+
+    const { data: eligible, error: elErr } = await supabaseAdmin
+        .from("bookings")
+        .select("id")
+        .in("room_id", roomIds)
+        .eq("status", "confirmed")
+        .eq("payment_status", "paid")
+        .lt("check_out", nowIso);
+
+    if (elErr || !eligible?.length) return;
+
+    const ids = eligible.map((row) => (row as { id: string }).id);
+    const { error: upErr } = await supabaseAdmin
+        .from("bookings")
+        .update({ status: "completed" })
+        .in("id", ids);
+    if (upErr) {
+        console.warn("[hotel/bookings] autoMarkCompletedStaysForHotel:", upErr.message);
+    }
+}
 
 /** Normalize hourly_available_hours: array of 0-23, or null when not offering hourly. */
 function normalizeHourlyAvailableHours(raw: unknown, offerHourly: boolean): number[] | null {
@@ -2029,6 +2069,8 @@ router.get("/hotel/bookings", authenticate, requireRole("hotel"), async (req, re
         return;
     }
 
+    await autoMarkCompletedStaysForHotel(profile.hotel_id);
+
     const { data, error } = await db
         .from("bookings")
         .select("*, rooms!inner(name, hotel_id)")
@@ -2224,7 +2266,12 @@ router.patch(
             return;
         }
         const db = createSupabaseClientForUser(req.supabaseAccessToken);
-        const bookingId = req.params.id;
+        const rawBid = req.params.id;
+        const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+        if (!bookingId) {
+            res.status(400).json({ error: "Invalid booking id" });
+            return;
+        }
 
         const { data: profile, error: profileError } = await db
             .from("profiles")
@@ -2270,6 +2317,12 @@ router.patch(
             res.status(500).json({ error: "Failed to confirm booking" });
             return;
         }
+        try {
+            const guestId = (updated as { user_id?: string }).user_id;
+            if (guestId) notifyGuestBookingConfirmed(guestId, bookingId);
+        } catch (e) {
+            console.warn("[realtime] notifyGuestBookingConfirmed failed", e);
+        }
         res.json(updated);
     }
 );
@@ -2280,7 +2333,12 @@ router.patch(
     authenticate,
     requireRole("hotel"),
     async (req, res) => {
-        const bookingId = req.params.id;
+        const rawBid = req.params.id;
+        const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+        if (!bookingId) {
+            res.status(400).json({ error: "Invalid booking id" });
+            return;
+        }
         const { reason } = req.body as { reason?: string };
 
         if (!reason || typeof reason !== "string" || !reason.trim()) {
@@ -2301,7 +2359,7 @@ router.patch(
 
         const { data: booking, error: fetchError } = await supabaseAdmin
             .from("bookings")
-            .select("id, status, room_id")
+            .select("id, status, room_id, user_id")
             .eq("id", bookingId)
             .single();
 
@@ -2337,6 +2395,12 @@ router.patch(
             res.status(500).json({ error: updateError.message ?? "Failed to decline booking" });
             return;
         }
+        try {
+            const guestId = (booking as { user_id?: string }).user_id;
+            if (guestId) notifyGuestBookingDeclined(guestId, bookingId);
+        } catch (e) {
+            console.warn("[realtime] notifyGuestBookingDeclined failed", e);
+        }
         res.json(updated);
     }
 );
@@ -2354,7 +2418,12 @@ router.patch(
             return;
         }
         const db = createSupabaseClientForUser(req.supabaseAccessToken);
-        const bookingId = req.params.id;
+        const rawBid = req.params.id;
+        const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+        if (!bookingId) {
+            res.status(400).json({ error: "Invalid booking id" });
+            return;
+        }
 
         const { data: profile, error: profileError } = await db
             .from("profiles")
@@ -2419,6 +2488,12 @@ router.patch(
             res.status(500).json({ error: "Failed to update payment status" });
             return;
         }
+        try {
+            const guestId = (updated as { user_id?: string }).user_id;
+            if (guestId) notifyGuestPaymentApproved(guestId, bookingId);
+        } catch (e) {
+            console.warn("[realtime] notifyGuestPaymentApproved failed", e);
+        }
         res.json(updated);
     }
 );
@@ -2436,7 +2511,12 @@ router.patch(
             return;
         }
         const db = createSupabaseClientForUser(req.supabaseAccessToken);
-        const bookingId = req.params.id;
+        const rawBid = req.params.id;
+        const bookingId = Array.isArray(rawBid) ? rawBid[0] : rawBid;
+        if (!bookingId) {
+            res.status(400).json({ error: "Invalid booking id" });
+            return;
+        }
         const { note } = req.body as { note?: string };
         const noteTrimmed =
             typeof note === "string" && note.trim() ? note.trim().slice(0, 2000) : null;
@@ -2500,6 +2580,12 @@ router.patch(
         if (updateError) {
             res.status(500).json({ error: updateError.message ?? "Failed to reject receipt" });
             return;
+        }
+        try {
+            const guestId = (updated as { user_id?: string }).user_id;
+            if (guestId) notifyGuestReceiptRejected(guestId, bookingId);
+        } catch (e) {
+            console.warn("[realtime] notifyGuestReceiptRejected failed", e);
         }
         res.json(updated);
     }

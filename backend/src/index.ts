@@ -11,18 +11,13 @@ import mapsRoutes from "./routes/mapsRoutes";
 import paymentRoutes from "./routes/paymentRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import preferencesRoutes from "./routes/preferencesRoutes";
-import { Server as SocketIOServer } from "socket.io";
+import { attachSocketIO } from "./realtime";
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new SocketIOServer(server, {
-    cors: {
-        origin: process.env.FRONTEND_ORIGIN || "*",
-        methods: ["GET", "POST", "PATCH", "DELETE"]
-    }
-});
+attachSocketIO(server, process.env.FRONTEND_ORIGIN || "*");
 
 app.use(
     cors({
@@ -44,11 +39,6 @@ app.use("/api", adminRoutes);
 
 app.get("/health", (_req, res) => {
     res.json({ status: "ok" });
-});
-
-io.on("connection", (socket) => {
-    // Placeholder for booking/availability events
-    console.log("Socket connected", socket.id);
 });
 
 const port = process.env.PORT || 4000;
