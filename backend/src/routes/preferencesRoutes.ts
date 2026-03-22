@@ -39,8 +39,34 @@ router.patch("/preferences", authenticate, async (req, res) => {
   const { budget_min, budget_max, amenities, travel_needs, hotel_preferences } = req.body;
 
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-  if (budget_min !== undefined) payload.budget_min = budget_min == null ? null : Number(budget_min);
-  if (budget_max !== undefined) payload.budget_max = budget_max == null ? null : Number(budget_max);
+  let minN: number | null | undefined;
+  let maxN: number | null | undefined;
+  if (budget_min !== undefined) {
+    minN = budget_min == null || budget_min === "" ? null : Number(budget_min);
+    if (minN !== null && Number.isNaN(minN)) {
+      res.status(400).json({ error: "Invalid min budget" });
+      return;
+    }
+    payload.budget_min = minN;
+  }
+  if (budget_max !== undefined) {
+    maxN = budget_max == null || budget_max === "" ? null : Number(budget_max);
+    if (maxN !== null && Number.isNaN(maxN)) {
+      res.status(400).json({ error: "Invalid max budget" });
+      return;
+    }
+    payload.budget_max = maxN;
+  }
+  if (
+    minN != null &&
+    maxN != null &&
+    !Number.isNaN(minN) &&
+    !Number.isNaN(maxN) &&
+    minN > maxN
+  ) {
+    res.status(400).json({ error: "Min budget cannot be greater than max budget" });
+    return;
+  }
   if (amenities !== undefined) payload.amenities = Array.isArray(amenities) ? amenities : [];
   if (travel_needs !== undefined) payload.travel_needs = travel_needs == null || travel_needs === "" ? null : String(travel_needs).trim();
   if (hotel_preferences !== undefined) payload.hotel_preferences = hotel_preferences == null || hotel_preferences === "" ? null : String(hotel_preferences).trim();

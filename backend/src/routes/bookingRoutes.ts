@@ -9,6 +9,12 @@ import {
   notifyHotelReceiptUploaded,
   notifyNewChatMessage
 } from "../realtime";
+import {
+  formatReceiptAmount,
+  formatReceiptLabels,
+  paymentMethodLabel,
+  pipeBookingEreceiptPdf,
+} from "../lib/bookingReceiptPdf";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -378,7 +384,7 @@ router.get(
     const { data, error } = await db
       .from("bookings")
       .select(
-        "*, rooms(hotel_id, name, hotels(id, name, address, images, profile_image, check_in_time, check_out_time))"
+        "*, rooms(hotel_id, name, hotels(id, name, address, images, profile_image, check_in_time, check_out_time, currency))"
       )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
@@ -682,6 +688,116 @@ router.post("/bookings/:bookingId/messages", authenticate, async (req: Request, 
 
   res.status(201).json(out);
 });
+
+function bookingRefFromId(id: string): string {
+  const compact = id.replace(/-/g, "").slice(0, 8).toUpperCase();
+  return `MST-${compact}`;
+}
+
+/** GET /api/bookings/:id/e-receipt — download system-generated e-receipt PDF (guest, paid bookings only). */
+router.get(
+  "/bookings/:id/e-receipt",
+  authenticate,
+  async (req: Request, res): Promise<void> => {
+    if (req.user!.role !== "guest") {
+      res.status(403).json({ error: "Only guests can download this e-receipt" });
+      return;
+    }
+    const rawId = req.params.id;
+    const bookingId = Array.isArray(rawId) ? rawId[0] : rawId;
+    if (!bookingId) {
+      res.status(400).json({ error: "Invalid booking id" });
+      return;
+    }
+    const userId = req.user!.sub;
+
+    const { data: booking, error } = await supabaseAdmin
+      .from("bookings")
+      .select(
+        `id, check_in, check_out, booking_type, total_amount, status, payment_status, payment_method, created_at,
+        rooms!inner(name, room_type, hotels(id, name, address, currency))`
+      )
+      .eq("id", bookingId)
+      .eq("user_id", userId)
+      .single();
+
+    if (error || !booking) {
+      res.status(404).json({ error: "Booking not found" });
+      return;
+    }
+
+    const b = booking as {
+      check_in: string;
+      check_out: string;
+      booking_type: string;
+      total_amount: string | number;
+      status: string;
+      payment_status: string;
+      payment_method: string | null;
+      created_at: string;
+      rooms?: {
+        name?: string | null;
+        room_type?: string | null;
+        hotels?: { name?: string | null; address?: string | null; currency?: string | null } | null;
+      } | null;
+    };
+
+    const ps = String(b.payment_status ?? "").toLowerCase();
+    if (ps !== "paid") {
+      res.status(400).json({
+        error: "E-receipts are available only after payment is marked as paid.",
+      });
+      return;
+    }
+
+    const roomRaw = b.rooms;
+    const room = roomRaw && (Array.isArray(roomRaw) ? roomRaw[0] : roomRaw);
+    const h = room?.hotels;
+    const hotel = h && (Array.isArray(h) ? h[0] : h);
+    const hotelName = hotel?.name?.trim() || "Hotel";
+    const hotelAddress = hotel?.address ?? null;
+    const currency = hotel?.currency ?? null;
+    const roomName = room?.name?.trim() || "Room";
+    const roomType = room?.room_type ?? null;
+
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("full_name, email")
+      .eq("id", userId)
+      .single();
+    const prof = profile as { full_name?: string | null; email?: string | null } | null;
+
+    const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const email = prof?.email ?? authUser?.user?.email ?? null;
+
+    const { checkIn, checkOut, issuedAtLabel } = formatReceiptLabels(
+      b.check_in,
+      b.check_out,
+      new Date().toISOString()
+    );
+
+    const bookingTypeLabel =
+      String(b.booking_type).toLowerCase() === "hourly" ? "Hourly (micro-stay)" : "Nightly";
+
+    pipeBookingEreceiptPdf(res, {
+      bookingRef: bookingRefFromId(bookingId),
+      guestName: prof?.full_name ?? null,
+      guestEmail: email,
+      hotelName,
+      hotelAddress,
+      roomName,
+      roomType,
+      bookingType: bookingTypeLabel,
+      checkIn,
+      checkOut,
+      totalAmountLabel: formatReceiptAmount(b.total_amount, currency),
+      paymentMethod: paymentMethodLabel(b.payment_method),
+      bookingStatus: String(b.status ?? "—").toUpperCase(),
+      paymentStatus: String(b.payment_status ?? "—").toUpperCase(),
+      issuedAtLabel,
+    });
+  }
+);
 
 /** GET /api/bookings/:id — single booking detail for the authenticated guest (own booking only). */
 router.get(
@@ -1086,7 +1202,7 @@ router.patch(
 
     const { data, error } = await supabaseAdmin
       .from("bookings")
-      .update({ status: "cancelled" })
+      .update({ status: "cancelled", payment_status: "cancelled" })
       .eq("id", bookingId)
       .select("*")
       .single();

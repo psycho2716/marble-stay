@@ -1,10 +1,22 @@
 import { Router } from "express";
+import multer from "multer";
 import { supabaseAdmin, supabaseClient } from "../config/supabaseClient";
-import { authenticate, signToken } from "../middleware/auth";
+import { authenticate, requireRole, signToken } from "../middleware/auth";
 
 const router = Router();
 
-/** GET /api/auth/me — current user info (email, full_name, role) for profile display. */
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+function guestAvatarPublicUrl(path: string | null | undefined): string | null {
+    if (!path) return null;
+    const { data } = supabaseAdmin.storage.from("guest-assets").getPublicUrl(path);
+    return data?.publicUrl ?? null;
+}
+
+/** GET /api/auth/me — current user info for profile display. */
 router.get("/me", authenticate, async (req, res) => {
     try {
         const { data, error } = await supabaseAdmin.auth.admin.getUserById(req.user!.sub);
@@ -14,13 +26,18 @@ router.get("/me", authenticate, async (req, res) => {
         }
         const { data: profile } = await supabaseAdmin
             .from("profiles")
-            .select("full_name")
+            .select("full_name, phone, country, avatar_path")
             .eq("id", req.user!.sub)
             .single();
+        const avatar_path = profile?.avatar_path ?? null;
         res.json({
             id: user.id,
             email: user.email ?? null,
             full_name: profile?.full_name ?? null,
+            phone: profile?.phone ?? null,
+            country: profile?.country ?? null,
+            avatar_path,
+            avatar_url: guestAvatarPublicUrl(avatar_path),
             role: req.user!.role,
         });
     } catch {
@@ -28,32 +45,123 @@ router.get("/me", authenticate, async (req, res) => {
     }
 });
 
-/** PATCH /api/auth/profile — update current user's profile (e.g. full_name). Guest and hotel. */
+/** PATCH /api/auth/profile — update current user's profile (full_name; guests: phone, country, clear avatar). */
 router.patch("/profile", authenticate, async (req, res) => {
-    const { full_name } = req.body as { full_name?: string | null };
-    const trimmed = full_name != null ? (full_name === "" ? null : full_name.trim()) : undefined;
+    const { full_name, phone, country, clear_avatar } = req.body as {
+        full_name?: string | null;
+        phone?: string | null;
+        country?: string | null;
+        clear_avatar?: boolean;
+    };
+    const trimmedName =
+        full_name != null ? (full_name === "" ? null : String(full_name).trim()) : undefined;
+    const trimmedPhone =
+        phone != null ? (phone === "" ? null : String(phone).trim()) : undefined;
+    const trimmedCountry =
+        country != null ? (country === "" ? null : String(country).trim()) : undefined;
+    const id = req.user!.sub;
     try {
-        const updates: { full_name?: string | null; updated_at: string } = {
+        const updates: Record<string, unknown> = {
             updated_at: new Date().toISOString(),
         };
-        if (trimmed !== undefined) updates.full_name = trimmed;
-        const { error } = await supabaseAdmin
-            .from("profiles")
-            .update(updates)
-            .eq("id", req.user!.sub);
+        if (trimmedName !== undefined) updates.full_name = trimmedName;
+        if (trimmedPhone !== undefined) updates.phone = trimmedPhone;
+        if (trimmedCountry !== undefined) updates.country = trimmedCountry;
+
+        if (clear_avatar === true) {
+            const { data: prev } = await supabaseAdmin
+                .from("profiles")
+                .select("avatar_path")
+                .eq("id", id)
+                .single();
+            const oldPath = prev?.avatar_path as string | null | undefined;
+            if (oldPath) {
+                await supabaseAdmin.storage.from("guest-assets").remove([oldPath]);
+            }
+            updates.avatar_path = null;
+        }
+
+        const { error } = await supabaseAdmin.from("profiles").update(updates).eq("id", id);
         if (error) {
             return res.status(400).json({ error: error.message ?? "Failed to update profile" });
         }
         const { data: profile } = await supabaseAdmin
             .from("profiles")
-            .select("full_name")
-            .eq("id", req.user!.sub)
+            .select("full_name, phone, country, avatar_path")
+            .eq("id", id)
             .single();
-        res.json({ full_name: profile?.full_name ?? null });
+        const avatar_path = profile?.avatar_path ?? null;
+        res.json({
+            full_name: profile?.full_name ?? null,
+            phone: profile?.phone ?? null,
+            country: profile?.country ?? null,
+            avatar_path,
+            avatar_url: guestAvatarPublicUrl(avatar_path),
+        });
     } catch {
         res.status(500).json({ error: "Failed to update profile" });
     }
 });
+
+/** POST /api/auth/guest/profile-image — guest profile photo (JPG/PNG/WebP/GIF, max 2MB). */
+router.post(
+    "/guest/profile-image",
+    authenticate,
+    requireRole("guest"),
+    upload.single("profile_image"),
+    async (req, res) => {
+        const file = req.file;
+        if (!file) {
+            return res.status(400).json({ error: "No file uploaded. Send profile_image." });
+        }
+        if (!file.mimetype?.startsWith("image/")) {
+            return res.status(400).json({ error: "File must be an image (JPEG, PNG, WebP, GIF)." });
+        }
+        const id = req.user!.sub;
+        const ext =
+            file.mimetype === "image/png"
+                ? "png"
+                : file.mimetype === "image/webp"
+                  ? "webp"
+                  : file.mimetype === "image/gif"
+                    ? "gif"
+                    : "jpg";
+        const filePath = `avatars/${id}/avatar.${ext}`;
+
+        const { data: prev } = await supabaseAdmin
+            .from("profiles")
+            .select("avatar_path")
+            .eq("id", id)
+            .single();
+        const oldPath = prev?.avatar_path as string | null | undefined;
+        if (oldPath && oldPath !== filePath) {
+            await supabaseAdmin.storage.from("guest-assets").remove([oldPath]);
+        }
+
+        const { error: uploadError } = await supabaseAdmin.storage
+            .from("guest-assets")
+            .upload(filePath, file.buffer, { contentType: file.mimetype, upsert: true });
+
+        if (uploadError) {
+            return res.status(500).json({ error: uploadError.message ?? "Failed to upload image" });
+        }
+
+        const { error: updateError } = await supabaseAdmin
+            .from("profiles")
+            .update({ avatar_path: filePath, updated_at: new Date().toISOString() })
+            .eq("id", id);
+
+        if (updateError) {
+            return res.status(500).json({ error: updateError.message ?? "Failed to save profile image" });
+        }
+
+        res.json({
+            avatar_path: filePath,
+            avatar_url: guestAvatarPublicUrl(filePath),
+            message: "Profile image updated.",
+        });
+    }
+);
 
 /** POST /api/auth/change-password — change password (current + new). Guest and hotel. */
 router.post("/change-password", authenticate, async (req, res) => {

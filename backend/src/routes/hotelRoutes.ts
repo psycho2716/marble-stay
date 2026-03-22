@@ -2386,7 +2386,11 @@ router.patch(
 
         const { data: updated, error: updateError } = await supabaseAdmin
             .from("bookings")
-            .update({ status: "cancelled", decline_reason: reason.trim() })
+            .update({
+                status: "cancelled",
+                payment_status: "cancelled",
+                decline_reason: reason.trim(),
+            })
             .eq("id", bookingId)
             .select("*")
             .single();
