@@ -2,10 +2,50 @@ import { Router } from "express";
 import type { Request } from "express";
 import multer from "multer";
 import { supabaseClient, supabaseAdmin, createSupabaseClientForUser } from "../config/supabaseClient";
-import { authenticate } from "../middleware/auth";
+import { authenticate, type AuthPayload } from "../middleware/auth";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+const MESSAGE_MAX_LEN = 5000;
+
+async function assertBookingMessageAccess(
+  userId: string,
+  role: AuthPayload["role"],
+  bookingId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const { data: booking, error } = await supabaseAdmin
+    .from("bookings")
+    .select("user_id, rooms!inner(hotel_id)")
+    .eq("id", bookingId)
+    .single();
+
+  if (error || !booking) {
+    return { ok: false, status: 404, error: "Booking not found" };
+  }
+
+  const b = booking as { user_id: string; rooms?: { hotel_id: string } | { hotel_id: string }[] };
+  const room = Array.isArray(b.rooms) ? b.rooms[0] : b.rooms;
+  const hotelId = room?.hotel_id;
+
+  if (role === "guest") {
+    if (b.user_id === userId) return { ok: true };
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  if (role === "hotel") {
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("hotel_id")
+      .eq("id", userId)
+      .single();
+    const ph = profile as { hotel_id?: string | null } | null;
+    if (ph?.hotel_id && hotelId && ph.hotel_id === hotelId) return { ok: true };
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+
+  return { ok: false, status: 403, error: "Forbidden" };
+}
 
 router.post(
   "/bookings",
@@ -17,14 +57,27 @@ router.post(
       return;
     }
     const db = createSupabaseClientForUser(req.supabaseAccessToken);
-    const { room_id, check_in, check_out, booking_type, hours: hoursRaw, payment_method } = req.body as {
+    const {
+      room_id,
+      check_in,
+      check_out,
+      booking_type,
+      hours: hoursRaw,
+      payment_method,
+      hotel_payment_method_id: hotelPaymentMethodIdRaw,
+    } = req.body as {
       room_id?: string;
       check_in?: string;
       check_out?: string;
       booking_type?: string;
       hours?: string | number[];
       payment_method?: string;
+      hotel_payment_method_id?: string;
     };
+    const hotelPaymentMethodId =
+      typeof hotelPaymentMethodIdRaw === "string" && hotelPaymentMethodIdRaw.trim()
+        ? hotelPaymentMethodIdRaw.trim()
+        : null;
     const receiptFile = req.file;
 
     let hours: number[] | undefined;
@@ -60,13 +113,48 @@ router.post(
 
     const { data: room, error: roomError } = await supabaseClient
       .from("rooms")
-      .select("id, base_price_night, hourly_rate, hourly_available_hours, is_available")
+      .select("id, hotel_id, base_price_night, hourly_rate, hourly_available_hours, is_available")
       .eq("id", room_id)
       .single();
 
     if (roomError || !room) {
       res.status(404).json({ error: "Room not found" });
       return;
+    }
+
+    const roomHotelId = (room as { hotel_id?: string }).hotel_id;
+
+    let hotelHasConfiguredProviders = false;
+    if (roomHotelId) {
+      const { data: hotelProviderRows } = await supabaseAdmin
+        .from("hotel_payment_methods")
+        .select("id")
+        .eq("hotel_id", roomHotelId);
+      hotelHasConfiguredProviders = (hotelProviderRows?.length ?? 0) > 0;
+    }
+
+    let resolvedHotelPaymentMethodId: string | null = null;
+    if (isOnlinePayment && hotelHasConfiguredProviders) {
+      if (!hotelPaymentMethodId) {
+        res.status(400).json({
+          error: "Please select which online payment method you are paying to (e.g. GCash or Maya).",
+        });
+        return;
+      }
+      if (!roomHotelId) {
+        res.status(400).json({ error: "Invalid room configuration" });
+        return;
+      }
+      const { data: pmRow, error: pmErr } = await supabaseAdmin
+        .from("hotel_payment_methods")
+        .select("id, hotel_id")
+        .eq("id", hotelPaymentMethodId)
+        .single();
+      if (pmErr || !pmRow || (pmRow as { hotel_id: string }).hotel_id !== roomHotelId) {
+        res.status(400).json({ error: "Invalid payment provider for this hotel" });
+        return;
+      }
+      resolvedHotelPaymentMethodId = hotelPaymentMethodId;
     }
     if ((room as unknown as { is_available?: boolean }).is_available === false) {
       res.status(400).json({ error: "Room is currently unavailable" });
@@ -187,7 +275,8 @@ router.post(
         payment_status: "pending",
         payment_method: isOnlinePayment ? "online" : "cash",
         payment_receipt_path: null,
-        hourly_hours: effectiveType === "hourly" ? hours : null
+        hourly_hours: effectiveType === "hourly" ? hours : null,
+        hotel_payment_method_id: resolvedHotelPaymentMethodId,
       })
       .select("*")
       .single();
@@ -225,7 +314,7 @@ router.get(
 
     const { data, error } = await db
       .from("bookings")
-      .select("*")
+      .select("*, rooms(name, hotels(name))")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -237,6 +326,133 @@ router.get(
     res.json(data ?? []);
   }
 );
+
+/** GET /api/bookings/:id/messages — guest or hotel staff for this booking. */
+router.get("/bookings/:bookingId/messages", authenticate, async (req: Request, res): Promise<void> => {
+  const bookingId = req.params.bookingId;
+  const userId = req.user!.sub;
+  const role = req.user!.role;
+
+  const access = await assertBookingMessageAccess(userId, role, bookingId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const { data: rows, error } = await supabaseAdmin
+    .from("booking_messages")
+    .select("id, booking_id, sender_id, body, created_at")
+    .eq("booking_id", bookingId)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    res.status(500).json({ error: error.message ?? "Failed to load messages" });
+    return;
+  }
+
+  const senderIds = Array.from(
+    new Set((rows ?? []).map((r) => (r as { sender_id: string }).sender_id).filter(Boolean))
+  );
+  const profileById = new Map<
+    string,
+    { full_name: string | null; email: string | null; role: string | null }
+  >();
+  if (senderIds.length > 0) {
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("id, full_name, email, role")
+      .in("id", senderIds);
+    for (const p of profiles ?? []) {
+      const row = p as { id: string; full_name?: string | null; email?: string | null; role?: string | null };
+      profileById.set(row.id, {
+        full_name: row.full_name ?? null,
+        email: row.email ?? null,
+        role: row.role ?? null,
+      });
+    }
+  }
+
+  const enriched = (rows ?? []).map((r) => {
+    const m = r as { id: string; sender_id: string; body: string; created_at: string };
+    const prof = profileById.get(m.sender_id);
+    const senderRole = prof?.role === "hotel" ? "hotel" : "guest";
+    const senderName =
+      prof?.full_name?.trim() ||
+      prof?.email?.trim() ||
+      (senderRole === "hotel" ? "Hotel" : "Guest");
+    return {
+      id: m.id,
+      booking_id: bookingId,
+      sender_id: m.sender_id,
+      body: m.body,
+      created_at: m.created_at,
+      sender_role: senderRole,
+      sender_name: senderName,
+    };
+  });
+
+  res.json(enriched);
+});
+
+/** POST /api/bookings/:id/messages — send a message (guest or hotel for this booking). */
+router.post("/bookings/:bookingId/messages", authenticate, async (req: Request, res): Promise<void> => {
+  const bookingId = req.params.bookingId;
+  const userId = req.user!.sub;
+  const role = req.user!.role;
+  const raw = typeof req.body?.body === "string" ? req.body.body : "";
+  const body = raw.trim();
+
+  if (!body) {
+    res.status(400).json({ error: "Message cannot be empty" });
+    return;
+  }
+  if (body.length > MESSAGE_MAX_LEN) {
+    res.status(400).json({ error: `Message must be at most ${MESSAGE_MAX_LEN} characters` });
+    return;
+  }
+
+  const access = await assertBookingMessageAccess(userId, role, bookingId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+
+  const { data: inserted, error } = await supabaseAdmin
+    .from("booking_messages")
+    .insert({
+      booking_id: bookingId,
+      sender_id: userId,
+      body,
+    })
+    .select("id, booking_id, sender_id, body, created_at")
+    .single();
+
+  if (error || !inserted) {
+    res.status(500).json({ error: error?.message ?? "Failed to send message" });
+    return;
+  }
+
+  const ins = inserted as { id: string; sender_id: string; body: string; created_at: string };
+  const { data: prof } = await supabaseAdmin
+    .from("profiles")
+    .select("full_name, email, role")
+    .eq("id", ins.sender_id)
+    .single();
+  const p = prof as { full_name?: string | null; email?: string | null; role?: string | null } | null;
+  const senderRole = p?.role === "hotel" ? "hotel" : "guest";
+  const senderName =
+    p?.full_name?.trim() || p?.email?.trim() || (senderRole === "hotel" ? "Hotel" : "Guest");
+
+  res.status(201).json({
+    id: ins.id,
+    booking_id: bookingId,
+    sender_id: ins.sender_id,
+    body: ins.body,
+    created_at: ins.created_at,
+    sender_role: senderRole,
+    sender_name: senderName,
+  });
+});
 
 /** GET /api/bookings/:id — single booking detail for the authenticated guest (own booking only). */
 router.get(
@@ -320,6 +536,94 @@ router.get(
       review_block_reason: reviewBlockReason,
     };
     res.json(out);
+  }
+);
+
+/** POST /api/bookings/:id/payment-receipt — guest re-uploads payment receipt after hotel rejected proof. */
+router.post(
+  "/bookings/:id/payment-receipt",
+  authenticate,
+  upload.single("receipt"),
+  async (req: Request, res): Promise<void> => {
+    if (!req.supabaseAccessToken) {
+      res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
+      return;
+    }
+    const bookingId = req.params.id;
+    const userId = req.user!.sub;
+    const receiptFile = req.file;
+    if (!receiptFile || !/^image\//.test(receiptFile.mimetype)) {
+      res.status(400).json({ error: "An image receipt file is required" });
+      return;
+    }
+
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const { data: booking, error: fetchError } = await db
+      .from("bookings")
+      .select("id, user_id, status, payment_status, payment_method, payment_receipt_path, payment_rejection_note")
+      .eq("id", bookingId)
+      .single();
+
+    if (fetchError || !booking) {
+      res.status(404).json({ error: "Booking not found" });
+      return;
+    }
+    if ((booking as { user_id: string }).user_id !== userId) {
+      res.status(403).json({ error: "Not allowed" });
+      return;
+    }
+
+    const b = booking as {
+      status: string;
+      payment_status: string;
+      payment_method?: string | null;
+      payment_receipt_path?: string | null;
+      payment_rejection_note?: string | null;
+    };
+    if (b.payment_receipt_path && !b.payment_rejection_note) {
+      res.status(400).json({
+        error: "A receipt is already on file. Wait for the hotel to verify it.",
+      });
+      return;
+    }
+    if (b.status !== "confirmed") {
+      res.status(400).json({ error: "Booking must be confirmed before uploading a receipt" });
+      return;
+    }
+    if (b.payment_status !== "pending") {
+      res.status(400).json({ error: "Payment is not awaiting a receipt" });
+      return;
+    }
+    if ((b.payment_method ?? "").toLowerCase() !== "online") {
+      res.status(400).json({ error: "This booking is not an online payment booking" });
+      return;
+    }
+
+    const ext = receiptFile.mimetype.split("/")[1]?.replace(/[^a-z0-9]/gi, "") || "jpg";
+    const filePath = `booking-receipts/${bookingId}/receipt.${ext}`;
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("hotel-assets")
+      .upload(filePath, receiptFile.buffer, { contentType: receiptFile.mimetype, upsert: true });
+    if (uploadError) {
+      res.status(500).json({ error: uploadError.message ?? "Failed to upload receipt" });
+      return;
+    }
+
+    const { data: updated, error: updateError } = await db
+      .from("bookings")
+      .update({
+        payment_receipt_path: filePath,
+        payment_rejection_note: null,
+      })
+      .eq("id", bookingId)
+      .select("*")
+      .single();
+
+    if (updateError) {
+      res.status(500).json({ error: updateError.message ?? "Failed to save receipt" });
+      return;
+    }
+    res.status(200).json(updated);
   }
 );
 
