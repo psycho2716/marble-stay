@@ -342,6 +342,30 @@ async function signedHotelCoverUrl(hotel: {
   return tryPath(first ?? null);
 }
 
+/** Signed view URLs for room gallery (guest booking detail). */
+async function signedRoomMediaUrls(
+  media: unknown
+): Promise<Array<{ type: "image" | "video"; url: string }>> {
+  if (!Array.isArray(media)) return [];
+  const out: Array<{ type: "image" | "video"; url: string }> = [];
+  for (const item of media) {
+    const path = (item as { path?: string })?.path?.trim();
+    if (!path) continue;
+    const type = (item as { type?: string }).type === "video" ? "video" : "image";
+    const { data: signed } = await supabaseAdmin.storage
+      .from("hotel-assets")
+      .createSignedUrl(path, 3600);
+    if (signed?.signedUrl) out.push({ type, url: signed.signedUrl });
+  }
+  return out;
+}
+
+function bookingDetailRoomRow(r: unknown): Record<string, unknown> | null {
+  if (!r || typeof r !== "object") return null;
+  if (Array.isArray(r)) return (r[0] as Record<string, unknown>) ?? null;
+  return r as Record<string, unknown>;
+}
+
 router.get(
   "/bookings",
   authenticate,
@@ -353,7 +377,9 @@ router.get(
 
     const { data, error } = await db
       .from("bookings")
-      .select("*, rooms(name, hotels(id, name, address, images, profile_image))")
+      .select(
+        "*, rooms(hotel_id, name, hotels(id, name, address, images, profile_image, check_in_time, check_out_time))"
+      )
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -390,7 +416,102 @@ router.get(
       })
     );
 
-    res.json(out);
+    const bookingIds = out.map((b) => String((b as { id: unknown }).id));
+    const { data: existingReviews } = await supabaseAdmin
+      .from("reviews")
+      .select("booking_id")
+      .in("booking_id", bookingIds);
+    const reviewedBookingIds = new Set(
+      (existingReviews ?? []).map((r) => String((r as { booking_id: string }).booking_id))
+    );
+
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const thisMonthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    ).toISOString();
+    const { data: monthReviews } = await supabaseAdmin
+      .from("reviews")
+      .select("booking_id")
+      .eq("user_id", userId)
+      .gte("created_at", thisMonthStart)
+      .lte("created_at", thisMonthEnd);
+
+    const monthReviewBookingIds = (monthReviews ?? []).map((r) =>
+      String((r as { booking_id: string }).booking_id)
+    );
+    const hotelsReviewedThisMonth = new Set<string>();
+    if (monthReviewBookingIds.length > 0) {
+      const { data: br } = await supabaseAdmin
+        .from("bookings")
+        .select("room_id")
+        .in("id", monthReviewBookingIds);
+      const roomIds = [
+        ...new Set(
+          (br ?? [])
+            .map((x) => (x as { room_id?: string }).room_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        ),
+      ];
+      if (roomIds.length > 0) {
+        const { data: roomsData } = await supabaseAdmin
+          .from("rooms")
+          .select("hotel_id")
+          .in("id", roomIds);
+        for (const row of roomsData ?? []) {
+          const hid = (row as { hotel_id?: string }).hotel_id;
+          if (hid) hotelsReviewedThisMonth.add(hid);
+        }
+      }
+    }
+
+    const HOTEL_MONTH_MSG =
+      "You can only rate each property once per month. Try again next month.";
+
+    const enriched = out.map((b) => {
+      const id = String((b as { id: unknown }).id);
+      const st = String((b as { status?: string }).status ?? "").toLowerCase();
+      const checkOutPast = new Date((b as { check_out: string }).check_out) <= new Date();
+      const hasReview = reviewedBookingIds.has(id);
+
+      const roomRaw = (b as { rooms?: unknown }).rooms;
+      const roomSingle = Array.isArray(roomRaw) ? roomRaw[0] : roomRaw;
+      let hotelId: string | null =
+        roomSingle && typeof roomSingle === "object"
+          ? String((roomSingle as { hotel_id?: string }).hotel_id ?? "") || null
+          : null;
+      if (!hotelId && roomSingle && typeof roomSingle === "object") {
+        const h = (roomSingle as { hotels?: { id?: string } | { id?: string }[] }).hotels;
+        const hotel = Array.isArray(h) ? h[0] : h;
+        if (hotel?.id) hotelId = String(hotel.id);
+      }
+
+      const eligibleBase =
+        checkOutPast &&
+        ["confirmed", "completed"].includes(st) &&
+        st !== "pending" &&
+        st !== "cancelled";
+
+      const hotelBlocked = Boolean(hotelId && hotelsReviewedThisMonth.has(hotelId));
+      const can_rate_stay = Boolean(!hasReview && eligibleBase && !hotelBlocked);
+      const rate_stay_block_reason =
+        !hasReview && eligibleBase && hotelBlocked ? HOTEL_MONTH_MSG : null;
+
+      return {
+        ...b,
+        has_review: hasReview,
+        can_rate_stay,
+        rate_stay_block_reason,
+      };
+    });
+
+    res.json(enriched);
   }
 );
 
@@ -577,7 +698,12 @@ router.get(
 
     const { data: booking, error: bookingError } = await supabaseAdmin
       .from("bookings")
-      .select("*, rooms(id, name, hotel_id)")
+      .select(
+        `*, rooms(
+          id, name, hotel_id, description, room_type, base_price_night, capacity, amenities, media,
+          bathroom_count, bathroom_shared, offer_hourly, hourly_rate
+        )`
+      )
       .eq("id", bookingId)
       .eq("user_id", userId)
       .single();
@@ -587,15 +713,37 @@ router.get(
       return;
     }
 
-    const room = (booking as { rooms?: { id: string; name: string; hotel_id: string } }).rooms;
-    let hotel: { id: string; name: string; address: string } | null = null;
-    if (room?.hotel_id) {
+    const roomRow = bookingDetailRoomRow((booking as { rooms?: unknown }).rooms);
+    const hotelId = (roomRow?.hotel_id as string | undefined) ?? undefined;
+
+    let hotel: {
+      id: string;
+      name: string;
+      address: string;
+      check_in_time: string | null;
+      check_out_time: string | null;
+    } | null = null;
+    if (hotelId) {
       const { data: hotelRow } = await supabaseAdmin
         .from("hotels")
-        .select("id, name, address")
-        .eq("id", room.hotel_id)
+        .select("id, name, address, check_in_time, check_out_time")
+        .eq("id", hotelId)
         .single();
-      if (hotelRow) hotel = hotelRow as { id: string; name: string; address: string };
+      if (hotelRow)
+        hotel = hotelRow as {
+          id: string;
+          name: string;
+          address: string;
+          check_in_time: string | null;
+          check_out_time: string | null;
+        };
+    }
+
+    let room: Record<string, unknown> | null = null;
+    if (roomRow) {
+      const media_urls = await signedRoomMediaUrls(roomRow.media);
+      const { media: _omitMedia, ...rest } = roomRow;
+      room = { ...rest, hotels: hotel, media_urls };
     }
 
     const b = booking as { check_out: string; status: string; id: string };
@@ -614,24 +762,46 @@ router.get(
 
     if (reviewRow) {
       existingReview = reviewRow as { rating: number; comment: string | null; created_at: string };
-    } else if (stayFinished && room?.id) {
+    } else if (stayFinished && room?.id && hotelId) {
       const now = new Date();
       const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
       const { data: sameMonthReviews } = await supabaseAdmin
         .from("reviews")
-        .select("id, bookings!inner(room_id)")
+        .select("booking_id")
         .eq("user_id", userId)
         .gte("created_at", thisMonthStart)
         .lte("created_at", thisMonthEnd);
 
-      const sameRoomThisMonth = (sameMonthReviews ?? []).some((r: unknown) => {
-        const b = (r as { bookings?: { room_id: string } | { room_id: string }[] }).bookings;
-        const roomId = Array.isArray(b) ? b[0]?.room_id : b?.room_id;
-        return roomId === room.id;
-      });
-      if (sameRoomThisMonth) {
-        reviewBlockReason = "You can only submit one review per room per month. Try again next month.";
+      const monthBids = (sameMonthReviews ?? []).map((r) =>
+        String((r as { booking_id: string }).booking_id)
+      );
+      let sameHotelThisMonth = false;
+      if (monthBids.length > 0) {
+        const { data: bkRows } = await supabaseAdmin
+          .from("bookings")
+          .select("room_id")
+          .in("id", monthBids);
+        const roomIds = [
+          ...new Set(
+            (bkRows ?? [])
+              .map((x) => (x as { room_id?: string }).room_id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0)
+          ),
+        ];
+        if (roomIds.length > 0) {
+          const { data: roomsData } = await supabaseAdmin
+            .from("rooms")
+            .select("hotel_id")
+            .in("id", roomIds);
+          sameHotelThisMonth = (roomsData ?? []).some(
+            (row) => (row as { hotel_id?: string }).hotel_id === hotelId
+          );
+        }
+      }
+      if (sameHotelThisMonth) {
+        reviewBlockReason =
+          "You can only rate each property once per month. Try again next month.";
       } else {
         canReview = true;
       }
@@ -643,7 +813,7 @@ router.get(
 
     const out = {
       ...booking,
-      rooms: room ? { ...room, hotels: hotel } : undefined,
+      rooms: room ?? undefined,
       can_review: canReview,
       existing_review: existingReview,
       review_block_reason: reviewBlockReason,
@@ -759,7 +929,7 @@ router.post(
   }
 );
 
-/** POST /api/bookings/:id/review — submit rating and feedback for a completed stay (once per room per month). */
+/** POST /api/bookings/:id/review — submit rating for a completed stay (once per property per calendar month). */
 router.post(
   "/bookings/:id/review",
   authenticate,
@@ -812,29 +982,57 @@ router.post(
       return;
     }
 
+    const { data: roomInfo } = await supabaseAdmin
+      .from("rooms")
+      .select("hotel_id")
+      .eq("id", (booking as { room_id: string }).room_id)
+      .single();
+    const targetHotelId = (roomInfo as { hotel_id?: string } | null)?.hotel_id;
+    if (!targetHotelId) {
+      res.status(500).json({ error: "Room configuration error" });
+      return;
+    }
+
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     const thisMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();
     const { data: sameMonthReviews } = await supabaseAdmin
       .from("reviews")
-      .select("id, booking_id")
+      .select("booking_id")
       .eq("user_id", userId)
       .gte("created_at", thisMonthStart)
       .lte("created_at", thisMonthEnd);
 
-    const bookingIds = (sameMonthReviews ?? []).map((r: { booking_id: string }) => r.booking_id);
-    let sameRoomThisMonth = false;
-    if (bookingIds.length > 0) {
+    const priorBookingIds = (sameMonthReviews ?? []).map((r) =>
+      String((r as { booking_id: string }).booking_id)
+    );
+    let sameHotelThisMonth = false;
+    if (priorBookingIds.length > 0) {
       const { data: bookingsForReviews } = await supabaseAdmin
         .from("bookings")
-        .select("id, room_id")
-        .in("id", bookingIds);
-      sameRoomThisMonth = (bookingsForReviews ?? []).some(
-        (b: { room_id: string }) => b.room_id === (booking as { room_id: string }).room_id
-      );
+        .select("room_id")
+        .in("id", priorBookingIds);
+      const roomIds = [
+        ...new Set(
+          (bookingsForReviews ?? [])
+            .map((x) => (x as { room_id?: string }).room_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0)
+        ),
+      ];
+      if (roomIds.length > 0) {
+        const { data: roomsData } = await supabaseAdmin
+          .from("rooms")
+          .select("hotel_id")
+          .in("id", roomIds);
+        sameHotelThisMonth = (roomsData ?? []).some(
+          (row) => (row as { hotel_id?: string }).hotel_id === targetHotelId
+        );
+      }
     }
-    if (sameRoomThisMonth) {
-      res.status(400).json({ error: "You can only submit one review per room per month. Try again next month." });
+    if (sameHotelThisMonth) {
+      res.status(400).json({
+        error: "You can only rate each property once per month. Try again next month.",
+      });
       return;
     }
 

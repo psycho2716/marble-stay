@@ -18,6 +18,8 @@ export type AppNotificationPayload = {
     senderAvatarUrl?: string | null;
     /** Display name for avatar fallback / subtitle */
     senderName?: string;
+    /** Property name — used for initials in guest UI when the hotel has no profile image */
+    hotelName?: string;
 };
 
 let io: SocketIOServer | null = null;
@@ -36,29 +38,47 @@ function newNotification(
     };
 }
 
-async function resolveSenderAvatarUrl(
-    senderId: string,
-    senderRole: "guest" | "hotel"
-): Promise<string | null> {
-    if (senderRole !== "hotel") return null;
-    const { data: prof } = await supabaseAdmin
-        .from("profiles")
-        .select("hotel_id")
-        .eq("id", senderId)
-        .single();
-    const hid = (prof as { hotel_id?: string | null } | null)?.hotel_id;
-    if (!hid) return null;
-    const { data: hotel } = await supabaseAdmin
+/** Signed avatar for chat notifications to guests: hotel profile image, else first hotel gallery image. */
+async function resolveHotelBrandingForNotification(hotelId: string): Promise<{
+    avatarUrl: string | null;
+    hotelName: string | null;
+}> {
+    const { data: hotel, error } = await supabaseAdmin
         .from("hotels")
-        .select("profile_image")
-        .eq("id", hid)
+        .select("name, profile_image, images")
+        .eq("id", hotelId)
         .single();
-    const path = (hotel as { profile_image?: string | null } | null)?.profile_image;
-    if (!path?.trim()) return null;
-    const { data: signed } = await supabaseAdmin.storage
-        .from("hotel-assets")
-        .createSignedUrl(path.trim(), 3600);
-    return signed?.signedUrl ?? null;
+
+    if (error || !hotel) {
+        return { avatarUrl: null, hotelName: null };
+    }
+
+    const h = hotel as {
+        name?: string | null;
+        profile_image?: string | null;
+        images?: string[] | null;
+    };
+
+    const trySigned = async (path: string | null | undefined): Promise<string | null> => {
+        const p = path?.trim();
+        if (!p) return null;
+        if (/^https?:\/\//i.test(p)) return p;
+        const { data: signed } = await supabaseAdmin.storage
+            .from("hotel-assets")
+            .createSignedUrl(p, 3600);
+        return signed?.signedUrl ?? null;
+    };
+
+    let avatarUrl = await trySigned(h.profile_image ?? null);
+    if (!avatarUrl) {
+        const first = h.images?.find((x) => typeof x === "string" && x.trim());
+        avatarUrl = await trySigned(first ?? null);
+    }
+
+    return {
+        avatarUrl,
+        hotelName: h.name?.trim() || null
+    };
 }
 
 export function emitBookingMessage(bookingId: string, payload: Record<string, unknown>): void {
@@ -157,18 +177,25 @@ export async function notifyNewChatMessage(args: {
     const preview =
         args.preview.length > 120 ? `${args.preview.slice(0, 117)}…` : args.preview;
     let senderAvatarUrl: string | null = null;
-    try {
-        senderAvatarUrl = await resolveSenderAvatarUrl(args.senderId, args.senderRole);
-    } catch (e) {
-        console.warn("[realtime] resolveSenderAvatarUrl failed", e);
+    let hotelName: string | undefined;
+    if (args.senderRole === "hotel") {
+        try {
+            const branding = await resolveHotelBrandingForNotification(args.hotelId);
+            senderAvatarUrl = branding.avatarUrl;
+            if (branding.hotelName) hotelName = branding.hotelName;
+        } catch (e) {
+            console.warn("[realtime] resolveHotelBrandingForNotification failed", e);
+        }
     }
+
     const payload = newNotification({
         type: "message",
         title: `Message from ${args.senderName}`,
         body: preview,
         bookingId: args.bookingId,
         senderName: args.senderName,
-        senderAvatarUrl: senderAvatarUrl ?? undefined
+        senderAvatarUrl: senderAvatarUrl ?? undefined,
+        ...(hotelName ? { hotelName } : {})
     });
     if (args.senderRole === "guest") {
         emitHotelNotification(args.hotelId, payload);
