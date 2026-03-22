@@ -372,22 +372,46 @@ function bookingDetailRoomRow(r: unknown): Record<string, unknown> | null {
   return r as Record<string, unknown>;
 }
 
+function firstQueryParam(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (Array.isArray(v)) return v[0];
+  return String(v);
+}
+
 router.get(
   "/bookings",
   authenticate,
   async (req: Request, res): Promise<void> => {
     const userId = req.user!.sub;
-    const db = req.supabaseAccessToken
-      ? createSupabaseClientForUser(req.supabaseAccessToken)
-      : supabaseAdmin;
+    // Always use service role for this read. User-scoped Supabase RLS only allows nested
+    // `rooms` / `hotels` when the hotel is verified; guests with bookings at non-verified
+    // hotels (or legacy rows) would get a PostgREST/RLS error and an empty error toast on
+    // the client. JWT is already verified; scope is strictly .eq("user_id", userId).
 
-    const { data, error } = await db
-      .from("bookings")
-      .select(
-        "*, rooms(hotel_id, name, hotels(id, name, address, images, profile_image, check_in_time, check_out_time, currency))"
-      )
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
+    const pageStr = firstQueryParam(req.query.page);
+    const limitStr = firstQueryParam(req.query.limit);
+    const hasPaging = pageStr !== undefined || limitStr !== undefined;
+    const page = Math.max(1, parseInt(pageStr ?? "1", 10) || 1);
+    const limit = hasPaging
+      ? Math.min(100, Math.max(1, parseInt(limitStr ?? "10", 10) || 10))
+      : 0;
+
+    const selection =
+      "*, rooms(hotel_id, name, hotels(id, name, address, images, profile_image, check_in_time, check_out_time, currency))";
+
+    const from = (page - 1) * limit;
+    const { data, error, count } = hasPaging
+      ? await supabaseAdmin
+          .from("bookings")
+          .select(selection, { count: "exact" })
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .range(from, from + limit - 1)
+      : await supabaseAdmin
+          .from("bookings")
+          .select(selection)
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false });
 
     if (error) {
       res.status(500).json({ error: "Failed to load bookings" });
@@ -395,6 +419,7 @@ router.get(
     }
 
     const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const total = hasPaging ? count ?? 0 : rows.length;
     const coverByHotelId = new Map<string, string | null>();
 
     const out = await Promise.all(
@@ -517,7 +542,12 @@ router.get(
       };
     });
 
-    res.json(enriched);
+    res.json({
+      bookings: enriched,
+      total,
+      page: hasPaging ? page : 1,
+      limit: hasPaging ? limit : enriched.length,
+    });
   }
 );
 
