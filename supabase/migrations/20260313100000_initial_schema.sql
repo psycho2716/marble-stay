@@ -23,7 +23,7 @@ CREATE TYPE payment_status AS ENUM ('pending', 'paid', 'refunded');
 -- ============================================================
 
 CREATE TABLE public.hotels (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   name TEXT NOT NULL,
   description TEXT,
   address TEXT NOT NULL,
@@ -67,7 +67,7 @@ COMMENT ON COLUMN public.profiles.role IS 'guest | hotel | admin. No separate st
 -- ============================================================
 
 CREATE TABLE public.rooms (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   hotel_id UUID NOT NULL REFERENCES public.hotels(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   room_type TEXT NOT NULL,
@@ -86,7 +86,7 @@ COMMENT ON TABLE public.rooms IS 'Rooms per hotel; hourly_rate used for micro-st
 -- ============================================================
 
 CREATE TABLE public.room_availability (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
   date DATE NOT NULL,
   available BOOLEAN NOT NULL DEFAULT true,
@@ -100,7 +100,7 @@ CREATE INDEX idx_room_availability_room_date ON public.room_availability(room_id
 -- ============================================================
 
 CREATE TABLE public.room_hourly_slots (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
   date DATE NOT NULL,
   hour SMALLINT NOT NULL CHECK (hour >= 0 AND hour <= 23),
@@ -115,7 +115,7 @@ CREATE INDEX idx_room_hourly_slots_room_date_hour ON public.room_hourly_slots(ro
 -- ============================================================
 
 CREATE TABLE public.bookings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   room_id UUID NOT NULL REFERENCES public.rooms(id) ON DELETE RESTRICT,
   check_in TIMESTAMPTZ NOT NULL,
@@ -139,7 +139,7 @@ CREATE INDEX idx_bookings_status ON public.bookings(status);
 -- ============================================================
 
 CREATE TABLE public.reviews (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   booking_id UUID NOT NULL REFERENCES public.bookings(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   rating SMALLINT NOT NULL CHECK (rating >= 1 AND rating <= 5),

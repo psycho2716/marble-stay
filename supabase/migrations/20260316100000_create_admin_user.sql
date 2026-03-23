@@ -12,7 +12,9 @@ DO $$
 DECLARE
   v_user_id UUID := gen_random_uuid();
   v_email TEXT := 'admin@marblestay.local';
-  v_encrypted_pw TEXT := crypt('AdminChangeMe123!', gen_salt('bf'));
+  -- Explicit cast + schema qualification avoids "function gen_salt(...) does not exist"
+  -- on some Supabase/Postgres deployments where extension functions live under `extensions`.
+  v_encrypted_pw TEXT := extensions.crypt('admin1234'::text, extensions.gen_salt('bf'::text));
 BEGIN
   -- Insert into auth.users so Supabase Auth recognizes the user
   INSERT INTO auth.users (

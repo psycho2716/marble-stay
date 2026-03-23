@@ -4,7 +4,7 @@
 -- ============================================================
 
 CREATE TABLE public.hotel_payment_methods (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   hotel_id UUID NOT NULL REFERENCES public.hotels(id) ON DELETE CASCADE,
   label TEXT NOT NULL,
   qr_image_path TEXT,
