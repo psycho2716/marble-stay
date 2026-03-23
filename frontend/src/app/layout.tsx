@@ -15,7 +15,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html lang="en" className={cn(inter.variable)} suppressHydrationWarning>
-            <body className="flex min-h-screen flex-col bg-background text-foreground">
+            <body
+                className="flex min-h-screen flex-col bg-background text-foreground"
+                suppressHydrationWarning
+            >
                 <AppChrome>{children}</AppChrome>
                 <SonnerToaster />
             </body>

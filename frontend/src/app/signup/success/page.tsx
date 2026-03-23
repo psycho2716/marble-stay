@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 
-export default function RegistrationSuccessPage() {
+function RegistrationSuccessInner() {
     const searchParams = useSearchParams();
     const email = searchParams.get("email") ?? "";
 
@@ -59,5 +60,13 @@ export default function RegistrationSuccessPage() {
                 </div>
             </div>
         </main>
+    );
+}
+
+export default function RegistrationSuccessPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 px-4 py-16">Loading…</div>}>
+            <RegistrationSuccessInner />
+        </Suspense>
     );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { LoginCard } from "@/components/auth/LoginCard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -17,7 +17,7 @@ function getRedirectForRole(role: string): string {
     }
 }
 
-export default function LoginPage() {
+function LoginPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
@@ -83,5 +83,13 @@ export default function LoginPage() {
                 loading={loading}
             />
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center bg-background px-4 py-12">Loading…</div>}>
+            <LoginPageInner />
+        </Suspense>
     );
 }

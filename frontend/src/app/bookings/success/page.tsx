@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { Suspense } from "react";
 
-export default function BookingSuccessPage() {
+function BookingSuccessInner() {
     const searchParams = useSearchParams();
     const bookingId = searchParams.get("bookingId");
 
@@ -39,5 +40,13 @@ export default function BookingSuccessPage() {
                 </Link>
             </div>
         </div>
+    );
+}
+
+export default function BookingSuccessPage() {
+    return (
+        <Suspense fallback={<div className="min-h-[60vh] max-w-lg px-4 py-16 text-center">Loading…</div>}>
+            <BookingSuccessInner />
+        </Suspense>
     );
 }

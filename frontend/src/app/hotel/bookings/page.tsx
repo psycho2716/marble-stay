@@ -793,7 +793,9 @@ export default function HotelBookingsPage() {
                 <p className="text-sm text-muted-foreground">Select a booking to view payment.</p>
               ) : (() => {
                   const cash = (detail.payment_method ?? "").toLowerCase() === "cash";
-                  const noReceipt = !detail.payment_receipt_url;
+                  // Next's <a href> type doesn't accept `null`, so normalize to `undefined`.
+                  const receiptUrl: string | undefined = detail.payment_receipt_url ?? undefined;
+                  const noReceipt = !receiptUrl;
                   if (cash || noReceipt) {
                     return (
                       <div className="flex min-h-[420px] items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-6">
@@ -810,7 +812,7 @@ export default function HotelBookingsPage() {
                           {(detail.guest?.full_name ?? detail.guest?.email ?? "Guest") + "_Receipt.jpg"}
                         </p>
                         <a
-                          href={detail.payment_receipt_url}
+                          href={receiptUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs font-semibold text-muted-foreground hover:text-foreground"
@@ -821,7 +823,7 @@ export default function HotelBookingsPage() {
                       <div className="mt-4 overflow-hidden rounded-lg border border-border bg-muted">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={detail.payment_receipt_url}
+                          src={receiptUrl}
                           alt="Payment receipt submitted by guest"
                           className="h-[420px] w-full object-contain bg-white"
                         />
@@ -916,7 +918,7 @@ export default function HotelBookingsPage() {
                                 : "—"}
                         </span>
                       </li>
-                      {(detail?.payment_method ?? "").toLowerCase() === "online" && (
+                      {detail && (detail?.payment_method ?? "").toLowerCase() === "online" && (
                         <li className="ml-6 list-none rounded-lg border border-border bg-muted/40 p-3 text-xs">
                           <p className="font-semibold text-foreground">Guest’s online payment details</p>
                           {detail.online_payment_details ? (

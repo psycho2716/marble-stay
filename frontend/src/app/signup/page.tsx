@@ -3,7 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SignupLayout } from "@/components/auth/SignupLayout";
@@ -27,7 +27,7 @@ const GUEST_GENDER_OPTIONS = [
     { value: "other", label: "Other" }
 ] as const;
 
-export default function SignupPage() {
+function SignupPageInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const isHotel = searchParams.get("role") === "hotel";
@@ -442,5 +442,13 @@ export default function SignupPage() {
                 </div>
             </div>
         </SignupLayout>
+    );
+}
+
+export default function SignupPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen px-4 py-16 text-center text-muted-foreground">Loading…</div>}>
+            <SignupPageInner />
+        </Suspense>
     );
 }
