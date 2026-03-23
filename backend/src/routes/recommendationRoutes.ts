@@ -155,17 +155,17 @@ router.get(
       const maxB = prefs!.budget_max != null ? Number(prefs!.budget_max) : undefined;
 
       list = list
-        .map((h) => ({
+        .map((h): typeof h & { minPrice: number } => ({
           ...h,
           minPrice: byHotel[h.id] ?? Number.MAX_SAFE_INTEGER
         }))
         .filter((h) => {
-          const minPrice = (h as { minPrice?: number }).minPrice;
+          const minPrice = h.minPrice;
           if (minB != null && minPrice < minB) return false;
           if (maxB != null && minPrice > maxB) return false;
           return true;
         })
-        .sort((a, b) => (a as { minPrice: number }).minPrice - (b as { minPrice: number }).minPrice)
+        .sort((a, b) => a.minPrice - b.minPrice)
         .map(({ minPrice: _, ...rest }) => rest);
     } else {
       // Default: show all verified hotels (no rating filter); optional sort by rating for display

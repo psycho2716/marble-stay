@@ -422,7 +422,7 @@ router.get(
     const total = hasPaging ? count ?? 0 : rows.length;
     const coverByHotelId = new Map<string, string | null>();
 
-    const out = await Promise.all(
+    const out: Array<Record<string, unknown> & { hotel_cover_url: string | null }> = await Promise.all(
       rows.map(async (b) => {
         const room = b.rooms as { hotels?: unknown } | null | undefined;
         const h = room?.hotels;
@@ -447,7 +447,7 @@ router.get(
       })
     );
 
-    const bookingIds = out.map((b) => String((b as { id: unknown }).id));
+    const bookingIds = out.map((b) => String(b.id));
     const { data: existingReviews } = await supabaseAdmin
       .from("reviews")
       .select("booking_id")
@@ -506,9 +506,11 @@ router.get(
       "You can only rate each property once per month. Try again next month.";
 
     const enriched = out.map((b) => {
-      const id = String((b as { id: unknown }).id);
-      const st = String((b as { status?: string }).status ?? "").toLowerCase();
-      const checkOutPast = new Date((b as { check_out: string }).check_out) <= new Date();
+      const id = String(b.id);
+      const st = String((b.status as string | undefined) ?? "").toLowerCase();
+      const checkOutRaw = b.check_out;
+      const checkOutPast =
+        typeof checkOutRaw === "string" ? new Date(checkOutRaw) <= new Date() : false;
       const hasReview = reviewedBookingIds.has(id);
 
       const roomRaw = (b as { rooms?: unknown }).rooms;

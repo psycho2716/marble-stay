@@ -260,6 +260,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
                 address: string | null;
                 images: string[] | null;
                 profile_image: string | null;
+                currency?: string | null;
             };
             ratings: number[];
         }
@@ -301,6 +302,7 @@ router.get("/hotels/top-rated", async (_req, res) => {
         images: string[] | null;
         profile_image?: string | null;
         profile_image_url?: string | null;
+        currency?: string | null;
         average_rating: number;
         review_count: number;
     }> = Array.from(byHotel.entries())
