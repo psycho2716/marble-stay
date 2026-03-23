@@ -18,7 +18,7 @@ const url = process.env.SUPABASE_URL?.trim();
 const serviceKey = process.env.SUPABASE_SERVICE_KEY?.trim();
 
 const email = (process.env.ADMIN_SEED_EMAIL ?? "admin@marblestay.local").trim().toLowerCase();
-const password = process.env.ADMIN_SEED_PASSWORD ?? "AdminChangeMe123!";
+const password = process.env.ADMIN_SEED_PASSWORD ?? "admin1234";
 
 async function main(): Promise<void> {
     if (!url || !serviceKey) {
