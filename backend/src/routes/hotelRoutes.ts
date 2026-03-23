@@ -128,10 +128,11 @@ async function handleHotelRegister(
     req: import("express").Request,
     res: import("express").Response
 ) {
-    const { email, password, full_name, hotel_name, address, contact_email, latitude, longitude } =
+    const { email, password, full_name, hotel_name, address, contact_email, contact_phone, latitude, longitude } =
         req.body;
 
-    if (!email || !password || !hotel_name || !address || !contact_email) {
+    const cleanPhone = typeof contact_phone === "string" ? contact_phone.trim() : "";
+    if (!email || !password || !hotel_name || !address || !contact_email || !cleanPhone) {
         res.status(400).json({ error: "Missing required fields" });
         return;
     }
@@ -191,6 +192,7 @@ async function handleHotelRegister(
             description: null,
             address,
             contact_email,
+            contact_phone: cleanPhone,
             latitude: lat,
             longitude: lng,
             business_permit_file: businessPermitUrl,
@@ -937,7 +939,7 @@ router.get("/me/hotel", authenticate, requireRole("hotel"), async (req, res) => 
 
     const { data: profile, error: profileError } = await db
         .from("profiles")
-        .select("hotel_id")
+        .select("hotel_id, full_name")
         .eq("id", req.user!.sub)
         .single();
 
@@ -958,6 +960,7 @@ router.get("/me/hotel", authenticate, requireRole("hotel"), async (req, res) => 
     }
 
     const out: Record<string, unknown> = { ...hotel };
+    out.user_full_name = profile?.full_name ?? null;
     if (hotel.profile_image) {
         const { data: signed } = await supabaseAdmin.storage
             .from("hotel-assets")
@@ -1011,7 +1014,7 @@ router.get("/me/hotel", authenticate, requireRole("hotel"), async (req, res) => 
     res.json(out);
 });
 
-/** PATCH /api/hotel/profile — update bio, description, opening_hours, check_in_time, check_out_time. */
+/** PATCH /api/hotel/profile — update hotel profile details and policy fields. */
 router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, res) => {
     if (!req.supabaseAccessToken) {
         res.status(401).json({ error: "Supabase session required (send x-supabase-access-token)" });
@@ -1020,7 +1023,7 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
     const db = createSupabaseClientForUser(req.supabaseAccessToken);
     const { data: profile, error: profileError } = await db
         .from("profiles")
-        .select("hotel_id")
+        .select("hotel_id, full_name")
         .eq("id", req.user!.sub)
         .single();
 
@@ -1030,6 +1033,11 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
     }
 
     const {
+        account_full_name,
+        name,
+        address,
+        contact_email,
+        contact_phone,
         description,
         bio,
         opening_hours,
@@ -1043,6 +1051,90 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
         cancellation_policy
     } = req.body;
     const updates: Record<string, unknown> = {};
+    const profileUpdates: Record<string, unknown> = {};
+    let resolvedUserFullName: string | null = profile?.full_name ?? null;
+    const { data: currentHotel, error: currentHotelError } = await supabaseAdmin
+        .from("hotels")
+        .select("name, permit_expires_at, hotel_name_edit_used")
+        .eq("id", profile.hotel_id)
+        .single();
+
+    if (currentHotelError || !currentHotel) {
+        res.status(404).json({ error: "Hotel not found" });
+        return;
+    }
+
+    if (name !== undefined) {
+        const nextName = typeof name === "string" ? name.trim() : "";
+        const currentName = (currentHotel.name ?? "").trim();
+        if (!nextName) {
+            res.status(400).json({ error: "Hotel name is required" });
+            return;
+        }
+
+        if (nextName !== currentName) {
+            const permitExpiryRaw = currentHotel.permit_expires_at;
+            const permitExpiresAt =
+                typeof permitExpiryRaw === "string" && permitExpiryRaw
+                    ? new Date(permitExpiryRaw)
+                    : null;
+            const permitExpired =
+                permitExpiresAt instanceof Date &&
+                !Number.isNaN(permitExpiresAt.getTime()) &&
+                permitExpiresAt.getTime() < Date.now();
+
+            if (!permitExpired) {
+                res.status(403).json({
+                    error: "Hotel name can only be edited when the legal document is expired."
+                });
+                return;
+            }
+
+            if (currentHotel.hotel_name_edit_used) {
+                res.status(403).json({
+                    error: "Hotel name can only be edited once per expiration and re-verification."
+                });
+                return;
+            }
+
+            updates.name = nextName;
+            updates.hotel_name_edit_used = true;
+            updates.verification_status = "pending";
+        }
+    }
+    if (address !== undefined) {
+        const nextAddress = address != null ? String(address).trim() : "";
+        if (!nextAddress) {
+            res.status(400).json({ error: "Address is required" });
+            return;
+        }
+        updates.address = nextAddress;
+    }
+    if (contact_email !== undefined) {
+        const nextContactEmail = contact_email != null ? String(contact_email).trim().toLowerCase() : "";
+        if (!nextContactEmail) {
+            res.status(400).json({ error: "Contact email is required" });
+            return;
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextContactEmail)) {
+            res.status(400).json({ error: "Contact email is invalid" });
+            return;
+        }
+        updates.contact_email = nextContactEmail;
+    }
+    if (contact_phone !== undefined)
+        updates.contact_phone = contact_phone != null ? String(contact_phone).trim() || null : null;
+
+    if (account_full_name !== undefined) {
+        const nextAccountFullName =
+            typeof account_full_name === "string" ? account_full_name.trim() : "";
+        if (!nextAccountFullName) {
+            res.status(400).json({ error: "Account name is required" });
+            return;
+        }
+        profileUpdates.full_name = nextAccountFullName;
+        resolvedUserFullName = nextAccountFullName;
+    }
     if (description !== undefined) updates.description = description;
     if (bio !== undefined) updates.bio = bio;
     if (opening_hours !== undefined) updates.opening_hours = opening_hours ?? {};
@@ -1060,23 +1152,55 @@ router.patch("/hotel/profile", authenticate, requireRole("hotel"), async (req, r
     if (smoking_policy !== undefined) updates.smoking_policy = smoking_policy != null ? String(smoking_policy).trim() || null : null;
     if (cancellation_policy !== undefined) updates.cancellation_policy = cancellation_policy != null ? String(cancellation_policy).trim() || null : null;
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && Object.keys(profileUpdates).length === 0) {
         res.status(400).json({ error: "No fields to update" });
         return;
     }
 
-    const { data: hotel, error: updateError } = await supabaseAdmin
-        .from("hotels")
-        .update(updates)
-        .eq("id", profile.hotel_id)
-        .select("*")
-        .single();
+    if (Object.keys(profileUpdates).length > 0) {
+        const { error: profileUpdateError } = await supabaseAdmin
+            .from("profiles")
+            .update(profileUpdates)
+            .eq("id", req.user!.sub);
 
-    if (updateError) {
-        res.status(500).json({ error: updateError.message ?? "Failed to update profile" });
-        return;
+        if (profileUpdateError) {
+            res.status(500).json({ error: profileUpdateError.message ?? "Failed to update account name" });
+            return;
+        }
     }
-    res.json(hotel);
+
+    let hotel: unknown = null;
+    if (Object.keys(updates).length > 0) {
+        const hotelUpdate = await supabaseAdmin
+            .from("hotels")
+            .update(updates)
+            .eq("id", profile.hotel_id)
+            .select("*")
+            .single();
+
+        if (hotelUpdate.error) {
+            res.status(500).json({ error: hotelUpdate.error.message ?? "Failed to update hotel profile" });
+            return;
+        }
+        hotel = hotelUpdate.data;
+    } else {
+        const hotelFetch = await supabaseAdmin
+            .from("hotels")
+            .select("*")
+            .eq("id", profile.hotel_id)
+            .single();
+
+        if (hotelFetch.error || !hotelFetch.data) {
+            res.status(500).json({ error: hotelFetch.error?.message ?? "Failed to load hotel after update" });
+            return;
+        }
+        hotel = hotelFetch.data;
+    }
+
+    res.json({
+        ...(hotel as Record<string, unknown>),
+        user_full_name: resolvedUserFullName
+    });
 });
 
 /** POST /api/hotel/profile-image — upload hotel profile/avatar image. */
@@ -1544,6 +1668,50 @@ router.post(
         });
     }
 );
+
+/** GET /api/hotel/permit-url — signed URL to view the authenticated hotel's legal document. */
+router.get("/hotel/permit-url", authenticate, requireRole("hotel"), async (req, res) => {
+    if (!req.supabaseAccessToken) {
+        res.status(401).json({
+            error: "Supabase session required (send x-supabase-access-token)"
+        });
+        return;
+    }
+
+    const db = createSupabaseClientForUser(req.supabaseAccessToken);
+    const { data: profile, error: profileError } = await db
+        .from("profiles")
+        .select("hotel_id")
+        .eq("id", req.user!.sub)
+        .single();
+
+    if (profileError || !profile?.hotel_id) {
+        res.status(404).json({ error: "No linked hotel found" });
+        return;
+    }
+
+    const { data: hotel, error: hotelError } = await db
+        .from("hotels")
+        .select("business_permit_file")
+        .eq("id", profile.hotel_id)
+        .single();
+
+    if (hotelError || !hotel?.business_permit_file) {
+        res.status(404).json({ error: "No legal document on file" });
+        return;
+    }
+
+    const { data: signed, error: signError } = await supabaseAdmin.storage
+        .from("hotel-assets")
+        .createSignedUrl(hotel.business_permit_file, 3600);
+
+    if (signError || !signed?.signedUrl) {
+        res.status(500).json({ error: "Could not generate document link" });
+        return;
+    }
+
+    res.json({ url: signed.signedUrl });
+});
 
 router.get("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res) => {
     if (!req.supabaseAccessToken) {

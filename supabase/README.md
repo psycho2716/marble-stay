@@ -19,6 +19,23 @@ Run in order (Supabase CLI applies them by timestamp):
 | `20260313100002_auth_trigger.sql` | Auto-create guest profile on auth signup |
 | `20260313100003_storage.sql` | Bucket `hotel-assets` (images + business permit PDF/image); storage policies |
 
+## Database seed (`seed.sql`)
+
+After migrations, `supabase db reset` runs **`seed.sql`** (see `config.toml` → `[db.seed]`).
+
+- **Admin user (idempotent):** if `admin@marblestay.local` is not in `auth.users`, the seed creates it with password `AdminChangeMe123!`, email confirmed, `profiles.role = admin`, and `guest_onboarding_completed = true`.
+- If that user already exists (for example from migration `20260316100000_create_admin_user.sql`), the seed logs a notice and does nothing.
+
+For **hosted** Supabase (or without resetting the DB), use the backend script instead:
+
+```bash
+cd backend
+# Ensure SUPABASE_URL + SUPABASE_SERVICE_KEY in .env
+npm run seed:admin
+```
+
+Optional env: `ADMIN_SEED_EMAIL`, `ADMIN_SEED_PASSWORD`.
+
 ## Applying migrations
 
 With [Supabase CLI](https://supabase.com/docs/guides/cli):

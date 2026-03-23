@@ -9,7 +9,7 @@ router.use(authenticate, requireRole("admin"));
 router.get("/admin/hotels", async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from("hotels")
-    .select("*")
+    .select("*, profiles ( full_name, email, role )")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -24,7 +24,7 @@ router.get("/admin/hotels/:id", async (req, res) => {
   const id = req.params.id;
   const { data, error } = await supabaseAdmin
     .from("hotels")
-    .select("*")
+    .select("*, profiles ( full_name, email, role )")
     .eq("id", id)
     .single();
 
@@ -78,9 +78,10 @@ router.patch("/admin/hotels/:id/verify", async (req, res) => {
     return;
   }
 
-  const updates: { verification_status: string; permit_expires_at: string } = {
+  const updates: { verification_status: string; permit_expires_at: string; hotel_name_edit_used: boolean } = {
     verification_status: "verified",
-    permit_expires_at: date.toISOString()
+    permit_expires_at: date.toISOString(),
+    hotel_name_edit_used: false
   };
 
   let result = await supabaseAdmin
@@ -93,7 +94,7 @@ router.patch("/admin/hotels/:id/verify", async (req, res) => {
   if (result.error && (result.error.message?.includes("permit_expires_at") ?? result.error.message?.includes("schema cache"))) {
     result = await supabaseAdmin
       .from("hotels")
-      .update({ verification_status: "verified" })
+      .update({ verification_status: "verified", hotel_name_edit_used: false })
       .eq("id", id)
       .select("*")
       .single();
@@ -112,7 +113,7 @@ router.patch("/admin/hotels/:id/reject", async (req, res) => {
   const id = req.params.id;
   let result = await supabaseAdmin
     .from("hotels")
-    .update({ verification_status: "rejected", permit_expires_at: null })
+    .update({ verification_status: "rejected", permit_expires_at: null, hotel_name_edit_used: false })
     .eq("id", id)
     .select("*")
     .single();
@@ -120,7 +121,7 @@ router.patch("/admin/hotels/:id/reject", async (req, res) => {
   if (result.error && (result.error.message?.includes("permit_expires_at") ?? result.error.message?.includes("schema cache"))) {
     result = await supabaseAdmin
       .from("hotels")
-      .update({ verification_status: "rejected" })
+      .update({ verification_status: "rejected", hotel_name_edit_used: false })
       .eq("id", id)
       .select("*")
       .single();
@@ -158,7 +159,9 @@ router.patch("/admin/hotels/:id/permit-expiry", async (req, res) => {
 router.get("/admin/users", async (_req, res) => {
   const { data, error } = await supabaseAdmin
     .from("profiles")
-    .select("id, email, full_name, role, hotel_id, created_at")
+    .select(
+      "id, email, full_name, role, hotel_id, created_at, address_line, city, region, postal_code, gender, avatar_path, hotels ( name, profile_image )"
+    )
     .neq("role", "admin")
     .order("created_at", { ascending: false });
 
@@ -167,7 +170,71 @@ router.get("/admin/users", async (_req, res) => {
     return;
   }
 
-  res.json(data);
+  const rows = (data ?? []) as Array<
+    {
+      id: string;
+      email: string;
+      full_name: string | null;
+      role: string;
+      hotel_id: string | null;
+      created_at: string;
+      address_line: string | null;
+      city: string | null;
+      region: string | null;
+      postal_code: string | null;
+      gender: string | null;
+      avatar_path: string | null;
+      hotels?: { name?: string | null; profile_image?: string | null } | Array<{
+        name?: string | null;
+        profile_image?: string | null;
+      }>;
+    }
+  >;
+
+  const out = [];
+  for (const row of rows) {
+    const hotel = Array.isArray(row.hotels) ? row.hotels[0] : row.hotels;
+    const hotelFetched =
+      hotel ??
+      (row.hotel_id
+        ? (
+            await supabaseAdmin
+              .from("hotels")
+              .select("name, profile_image")
+              .eq("id", row.hotel_id)
+              .single()
+          ).data
+        : null);
+
+    const hotel_name = hotelFetched?.name ?? null;
+    const hotel_profile_image = hotelFetched?.profile_image ?? null;
+
+    let avatar_url: string | null = null;
+    if (row.role === "hotel") {
+      if (hotel_profile_image) {
+        const { data: signed } = await supabaseAdmin.storage
+          .from("hotel-assets")
+          .createSignedUrl(hotel_profile_image, 3600);
+        avatar_url = signed?.signedUrl ?? null;
+      }
+    } else {
+      if (row.avatar_path) {
+        const { data: pub } = await supabaseAdmin.storage
+          .from("guest-assets")
+          .getPublicUrl(row.avatar_path);
+        avatar_url = pub?.publicUrl ?? null;
+      }
+    }
+
+    out.push({
+      ...row,
+      hotels: undefined,
+      hotel_name,
+      avatar_url
+    });
+  }
+
+  res.json(out);
 });
 
 /** DELETE /api/admin/users/:id — delete user and all related data. Excludes admin. */
@@ -180,7 +247,7 @@ router.delete("/admin/users/:id", async (req, res) => {
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id, role, email")
+    .select("id, role, email, hotel_id")
     .eq("id", id)
     .single();
 
@@ -192,6 +259,53 @@ router.delete("/admin/users/:id", async (req, res) => {
   if (profile.role === "admin") {
     res.status(403).json({ error: "Cannot delete admin account" });
     return;
+  }
+
+  const hotelId = (profile as { hotel_id?: string | null }).hotel_id ?? null;
+  if (hotelId) {
+    const { data: roomRows } = await supabaseAdmin
+      .from("rooms")
+      .select("id")
+      .eq("hotel_id", hotelId);
+
+    const roomIds = (roomRows ?? []).map((r) => r.id as string);
+    if (roomIds.length > 0) {
+      const { error: hotelBookingsErr } = await supabaseAdmin
+        .from("bookings")
+        .delete()
+        .in("room_id", roomIds);
+      if (hotelBookingsErr) {
+        res.status(500).json({ error: hotelBookingsErr.message || "Failed to delete hotel bookings" });
+        return;
+      }
+    }
+
+    const { error: paymentMethodsErr } = await supabaseAdmin
+      .from("hotel_payment_methods")
+      .delete()
+      .eq("hotel_id", hotelId);
+    if (paymentMethodsErr) {
+      res.status(500).json({ error: paymentMethodsErr.message || "Failed to delete hotel payment methods" });
+      return;
+    }
+
+    const { error: roomsErr } = await supabaseAdmin
+      .from("rooms")
+      .delete()
+      .eq("hotel_id", hotelId);
+    if (roomsErr) {
+      res.status(500).json({ error: roomsErr.message || "Failed to delete hotel rooms" });
+      return;
+    }
+
+    const { error: hotelErr } = await supabaseAdmin
+      .from("hotels")
+      .delete()
+      .eq("id", hotelId);
+    if (hotelErr) {
+      res.status(500).json({ error: hotelErr.message || "Failed to delete hotel record" });
+      return;
+    }
   }
 
   // Delete all public schema data linked to this user (FK-safe order).
