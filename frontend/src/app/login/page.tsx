@@ -24,6 +24,9 @@ function LoginPageInner() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [canResendVerification, setCanResendVerification] = useState(false);
+    const [resendLoading, setResendLoading] = useState(false);
+    const [resendMessage, setResendMessage] = useState("");
 
     const registered = searchParams.get("registered") === "1";
     const hotelSubmitted = searchParams.get("hotel") === "1";
@@ -32,6 +35,8 @@ function LoginPageInner() {
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setError("");
+        setCanResendVerification(false);
+        setResendMessage("");
         setLoading(true);
         try {
             const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -41,7 +46,9 @@ function LoginPageInner() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setError(data.error ?? "Invalid credentials");
+                const apiError = String(data.error ?? "Invalid credentials");
+                setError(apiError);
+                setCanResendVerification(apiError.toLowerCase().includes("verify your email"));
                 setLoading(false);
                 return;
             }
@@ -64,6 +71,34 @@ function LoginPageInner() {
         }
     }
 
+    async function handleResendVerification() {
+        if (!email.trim()) {
+            setResendMessage("Enter your email first, then resend verification.");
+            return;
+        }
+        setResendLoading(true);
+        setResendMessage("");
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim() })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setResendMessage(String(data.error ?? "Unable to resend verification email."));
+                return;
+            }
+            setResendMessage(
+                String(data.message ?? "Verification email sent. Please check your inbox.")
+            );
+        } catch {
+            setResendMessage("Unable to resend verification email right now. Please try again.");
+        } finally {
+            setResendLoading(false);
+        }
+    }
+
     return (
         <div className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center bg-background px-4 py-12">
             <LoginCard
@@ -81,6 +116,10 @@ function LoginPageInner() {
                 setPassword={setPassword}
                 error={error}
                 loading={loading}
+                canResendVerification={canResendVerification}
+                resendLoading={resendLoading}
+                resendMessage={resendMessage}
+                onResendVerification={handleResendVerification}
             />
         </div>
     );

@@ -16,6 +16,10 @@ type LoginCardProps = {
     setPassword: (v: string) => void;
     error: string;
     loading: boolean;
+    canResendVerification?: boolean;
+    resendLoading?: boolean;
+    resendMessage?: string;
+    onResendVerification?: () => void;
 };
 
 export function LoginCard({
@@ -28,7 +32,11 @@ export function LoginCard({
     password,
     setPassword,
     error,
-    loading
+    loading,
+    canResendVerification = false,
+    resendLoading = false,
+    resendMessage = "",
+    onResendVerification
 }: LoginCardProps) {
     const [showPassword, setShowPassword] = useState(false);
 
@@ -52,6 +60,24 @@ export function LoginCard({
                 {error && (
                     <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                         {error}
+                    </div>
+                )}
+                {canResendVerification && (
+                    <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
+                        <p className="text-sm text-foreground">
+                            Need a new verification email? We can send another link.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={onResendVerification}
+                            disabled={resendLoading}
+                            className="mt-2 text-sm font-semibold text-primary hover:underline disabled:opacity-60"
+                        >
+                            {resendLoading ? "Sending…" : "Resend verification email"}
+                        </button>
+                        {resendMessage && (
+                            <p className="mt-2 text-xs text-muted-foreground">{resendMessage}</p>
+                        )}
                     </div>
                 )}
                 <div>

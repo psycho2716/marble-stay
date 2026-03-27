@@ -14,6 +14,7 @@ import {
 } from "../realtime";
 
 const router = Router();
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -130,9 +131,11 @@ async function handleHotelRegister(
 ) {
     const { email, password, full_name, hotel_name, address, contact_email, contact_phone, latitude, longitude } =
         req.body;
+    const cleanEmail = typeof email === "string" ? email.trim() : "";
+    const cleanPassword = typeof password === "string" ? password : "";
 
     const cleanPhone = typeof contact_phone === "string" ? contact_phone.trim() : "";
-    if (!email || !password || !hotel_name || !address || !contact_email || !cleanPhone) {
+    if (!cleanEmail || !cleanPassword || !hotel_name || !address || !contact_email || !cleanPhone) {
         res.status(400).json({ error: "Missing required fields" });
         return;
     }
@@ -173,11 +176,13 @@ async function handleHotelRegister(
 
     const role = "hotel";
 
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name, role }
+    const { data: userData, error: userError } = await supabaseClient.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+            data: { full_name, role },
+            emailRedirectTo: `${FRONTEND_ORIGIN}/login`
+        }
     });
 
     if (userError || !userData.user) {
@@ -212,7 +217,9 @@ async function handleHotelRegister(
         .eq("id", userData.user.id);
 
     res.status(201).json({
-        message: "Hotel account created. Await admin verification before accessing dashboard."
+        message:
+            "Hotel account created. Please verify your email first, then await admin verification before accessing dashboard.",
+        email_verification_sent: true
     });
 }
 
