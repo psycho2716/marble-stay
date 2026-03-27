@@ -37,7 +37,7 @@ export function HeroSearch() {
                     Find your perfect stay
                 </h1>
                 <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">
-                    Search for luxury hotels and cozy stays around the world.
+                    Search for luxury hotels and cozy stays around Romblon.
                 </p>
 
                 {/* Search bar — white rounded container */}
