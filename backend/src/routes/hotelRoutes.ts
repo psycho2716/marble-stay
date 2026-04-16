@@ -74,6 +74,162 @@ function normalizeHourlyAvailableHours(raw: unknown, offerHourly: boolean): numb
     return [...new Set(hours)].sort((a, b) => a - b);
 }
 
+function getRoomIdFromReviewBookingRelation(
+    bookings: unknown
+): string | null {
+    if (Array.isArray(bookings)) {
+        const roomId = bookings[0] && typeof bookings[0] === "object"
+            ? (bookings[0] as { room_id?: unknown }).room_id
+            : null;
+        return typeof roomId === "string" ? roomId : null;
+    }
+
+    if (bookings && typeof bookings === "object") {
+        const roomId = (bookings as { room_id?: unknown }).room_id;
+        return typeof roomId === "string" ? roomId : null;
+    }
+
+    return null;
+}
+
+function getHotelIdFromReviewBookingRelation(
+    bookings: unknown
+): string | null {
+    const bookingRecord =
+        Array.isArray(bookings) ? bookings[0] : bookings;
+
+    if (!bookingRecord || typeof bookingRecord !== "object") {
+        return null;
+    }
+
+    const rooms = (bookingRecord as { rooms?: unknown }).rooms;
+    const roomRecord = Array.isArray(rooms) ? rooms[0] : rooms;
+    if (!roomRecord || typeof roomRecord !== "object") {
+        return null;
+    }
+
+    const hotelId = (roomRecord as { hotel_id?: unknown }).hotel_id;
+    return typeof hotelId === "string" ? hotelId : null;
+}
+
+type ReviewAggregateRecord = {
+    booking_id: string;
+    rating: number;
+    comment: string | null;
+    created_at: string;
+};
+
+type ReviewRelationMaps = {
+    roomIdByBookingId: Map<string, string>;
+    hotelIdByRoomId: Map<string, string>;
+};
+
+async function getReviewAggregateRecords(): Promise<ReviewAggregateRecord[]> {
+    const { data, error } = await supabaseAdmin
+        .from("reviews")
+        .select("booking_id, rating, comment, created_at");
+
+    if (error || !data) return [];
+
+    return data.flatMap((row) => {
+        const bookingId = (row as { booking_id?: unknown }).booking_id;
+        const rating = Number((row as { rating?: unknown }).rating);
+        const comment = (row as { comment?: unknown }).comment;
+        const createdAt = (row as { created_at?: unknown }).created_at;
+
+        if (
+            typeof bookingId !== "string" ||
+            !Number.isFinite(rating) ||
+            typeof createdAt !== "string"
+        ) {
+            return [];
+        }
+
+        return [
+            {
+                booking_id: bookingId,
+                rating,
+                comment: typeof comment === "string" ? comment : null,
+                created_at: createdAt
+            }
+        ];
+    });
+}
+
+async function getReviewRelationMaps(
+    bookingIds: string[]
+): Promise<ReviewRelationMaps> {
+    if (bookingIds.length === 0) {
+        return {
+            roomIdByBookingId: new Map<string, string>(),
+            hotelIdByRoomId: new Map<string, string>()
+        };
+    }
+
+    const { data: bookingRows, error: bookingsError } = await supabaseAdmin
+        .from("bookings")
+        .select("id, room_id")
+        .in("id", bookingIds);
+
+    if (bookingsError || !bookingRows) {
+        return {
+            roomIdByBookingId: new Map<string, string>(),
+            hotelIdByRoomId: new Map<string, string>()
+        };
+    }
+
+    const roomIdByBookingId = new Map<string, string>();
+    const roomIds = new Set<string>();
+
+    for (const row of bookingRows) {
+        const bookingId = (row as { id?: unknown }).id;
+        const roomId = (row as { room_id?: unknown }).room_id;
+        if (typeof bookingId !== "string" || typeof roomId !== "string") continue;
+        roomIdByBookingId.set(bookingId, roomId);
+        roomIds.add(roomId);
+    }
+
+    if (roomIds.size === 0) {
+        return {
+            roomIdByBookingId,
+            hotelIdByRoomId: new Map<string, string>()
+        };
+    }
+
+    const { data: roomRows, error: roomsError } = await supabaseAdmin
+        .from("rooms")
+        .select("id, hotel_id")
+        .in("id", Array.from(roomIds));
+
+    if (roomsError || !roomRows) {
+        return {
+            roomIdByBookingId,
+            hotelIdByRoomId: new Map<string, string>()
+        };
+    }
+
+    const hotelIdByRoomId = new Map<string, string>();
+    for (const row of roomRows) {
+        const roomId = (row as { id?: unknown }).id;
+        const hotelId = (row as { hotel_id?: unknown }).hotel_id;
+        if (typeof roomId !== "string" || typeof hotelId !== "string") continue;
+        hotelIdByRoomId.set(roomId, hotelId);
+    }
+
+    return { roomIdByBookingId, hotelIdByRoomId };
+}
+
+async function getReviewAggregateContext(): Promise<{
+    reviews: ReviewAggregateRecord[];
+    relationMaps: ReviewRelationMaps;
+}> {
+    const reviews = await getReviewAggregateRecords();
+    const bookingIds = Array.from(new Set(reviews.map((review) => review.booking_id)));
+    const relationMaps = await getReviewRelationMaps(bookingIds);
+
+    return { reviews, relationMaps };
+}
+
 const ALLOWED_CUSTOM_POLICY_ICON_KEYS = [
     // Must match the frontend predefined icon keys
     "shield",
@@ -228,35 +384,53 @@ router.post("/hotels/register", upload.single("business_permit"), handleHotelReg
 
 /** GET /api/hotels/top-rated — verified hotels with high average review rating (for landing page). */
 router.get("/hotels/top-rated", async (_req, res) => {
-    const { data: reviewsData, error: reviewsError } = await supabaseClient
-        .from("reviews")
-        .select(
-            "rating, bookings(room_id, rooms(hotel_id, hotels(id, name, address, images, profile_image, verification_status, currency)))"
-        );
+    const { reviews, relationMaps } = await getReviewAggregateContext();
 
-    if (reviewsError) {
-        res.status(500).json({ error: "Failed to load reviews" });
+    const hotelIds = Array.from(
+        new Set(
+            reviews.flatMap((review) => {
+                const roomId = relationMaps.roomIdByBookingId.get(review.booking_id);
+                const hotelId = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
+                return hotelId ? [hotelId] : [];
+            })
+        )
+    );
+
+    const { data: hotelRows, error: hotelsError } = await supabaseAdmin
+        .from("hotels")
+        .select("id, name, address, images, profile_image, verification_status, currency")
+        .in("id", hotelIds.length > 0 ? hotelIds : ["00000000-0000-0000-0000-000000000000"]);
+
+    if (hotelsError) {
+        res.status(500).json({ error: "Failed to load hotels" });
         return;
     }
 
-    type Nested = {
-        rating: number;
-        bookings: {
-            room_id: string;
-            rooms: {
-                hotel_id: string;
-                hotels: {
-                    id: string;
-                    name: string;
-                    address: string | null;
-                    images: string[] | null;
-                    profile_image: string | null;
-                    verification_status: string;
-                } | null;
-            } | null;
-        } | null;
-    };
-    const reviews = (reviewsData as unknown as Nested[]) ?? [];
+    const hotelById = new Map<
+        string,
+        {
+            id: string;
+            name: string;
+            address: string | null;
+            images: string[] | null;
+            profile_image: string | null;
+            verification_status: string;
+            currency?: string | null;
+        }
+    >();
+    for (const row of hotelRows ?? []) {
+        const hotelId = (row as { id?: unknown }).id;
+        if (typeof hotelId !== "string") continue;
+        hotelById.set(hotelId, row as {
+            id: string;
+            name: string;
+            address: string | null;
+            images: string[] | null;
+            profile_image: string | null;
+            verification_status: string;
+            currency?: string | null;
+        });
+    }
 
     const byHotel = new Map<
         string,
@@ -274,7 +448,9 @@ router.get("/hotels/top-rated", async (_req, res) => {
     >();
 
     for (const r of reviews) {
-        const hotel = r.bookings?.rooms?.hotels;
+        const roomId = relationMaps.roomIdByBookingId.get(r.booking_id);
+        const hotelId = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
+        const hotel = hotelId ? hotelById.get(hotelId) ?? null : null;
         if (!hotel || hotel.verification_status !== "verified") continue;
         const entry = byHotel.get(hotel.id);
         if (!entry) {
@@ -473,36 +649,27 @@ router.get("/hotels", async (req, res) => {
         result.map((h) => h.id).filter((id): id is string => typeof id === "string")
     );
     if (hotelIdSet.size > 0) {
-        const { data: reviewsData, error: reviewsError } = await supabaseClient
-            .from("reviews")
-            .select("rating, bookings(room_id, rooms(hotel_id))");
+        const { reviews, relationMaps } = await getReviewAggregateContext();
+        const sumByHotel = new Map<string, { sum: number; count: number }>();
 
-        if (!reviewsError) {
-            const sumByHotel = new Map<string, { sum: number; count: number }>();
-            for (const r of reviewsData ?? []) {
-                const rating = Number((r as { rating?: unknown }).rating);
-                if (!Number.isFinite(rating)) continue;
-                const hid = (r as { bookings?: { rooms?: { hotel_id?: unknown } } }).bookings?.rooms
-                    ?.hotel_id;
-                if (typeof hid !== "string" || !hotelIdSet.has(hid)) continue;
-                const cur = sumByHotel.get(hid) ?? { sum: 0, count: 0 };
-                cur.sum += rating;
-                cur.count += 1;
-                sumByHotel.set(hid, cur);
-            }
-            for (const h of result) {
-                const hid = h.id as string | undefined;
-                if (!hid) continue;
-                const agg = sumByHotel.get(hid);
-                (h as Record<string, unknown>).review_count = agg?.count ?? 0;
-                (h as Record<string, unknown>).average_rating =
-                    agg && agg.count > 0 ? agg.sum / agg.count : null;
-            }
-        } else {
-            for (const h of result) {
-                (h as Record<string, unknown>).review_count = 0;
-                (h as Record<string, unknown>).average_rating = null;
-            }
+        for (const review of reviews) {
+            const roomId = relationMaps.roomIdByBookingId.get(review.booking_id);
+            const hotelId = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
+            if (!hotelId || !hotelIdSet.has(hotelId)) continue;
+
+            const cur = sumByHotel.get(hotelId) ?? { sum: 0, count: 0 };
+            cur.sum += review.rating;
+            cur.count += 1;
+            sumByHotel.set(hotelId, cur);
+        }
+
+        for (const h of result) {
+            const hid = h.id as string | undefined;
+            if (!hid) continue;
+            const agg = sumByHotel.get(hid);
+            (h as Record<string, unknown>).review_count = agg?.count ?? 0;
+            (h as Record<string, unknown>).average_rating =
+                agg && agg.count > 0 ? agg.sum / agg.count : null;
         }
     }
 
@@ -635,18 +802,14 @@ router.get("/hotels/:id", async (req, res) => {
         rooms.push(r);
     }
 
-    const { data: reviewsData } = await supabaseClient
-        .from("reviews")
-        .select("rating, bookings(room_id, rooms(hotel_id))");
     const sumByHotel = new Map<string, { sum: number; count: number }>();
-    for (const r of reviewsData ?? []) {
-        const rating = Number((r as { rating?: unknown }).rating);
-        if (!Number.isFinite(rating)) continue;
-        const hid = (r as { bookings?: { rooms?: { hotel_id?: unknown } } }).bookings?.rooms
-            ?.hotel_id;
-        if (typeof hid !== "string" || hid !== hotelId) continue;
+    const { reviews, relationMaps } = await getReviewAggregateContext();
+    for (const review of reviews) {
+        const roomId = relationMaps.roomIdByBookingId.get(review.booking_id);
+        const hid = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
+        if (hid !== hotelId) continue;
         const cur = sumByHotel.get(hotelId) ?? { sum: 0, count: 0 };
-        cur.sum += rating;
+        cur.sum += review.rating;
         cur.count += 1;
         sumByHotel.set(hotelId, cur);
     }
@@ -824,28 +987,33 @@ router.get("/rooms/:id", async (req, res) => {
     const { hotels: _h, ...roomData } = room;
 
     // Room rating: aggregate reviews via bookings -> room_id
-    const { data: reviewsData } = await supabaseClient
-        .from("reviews")
-        .select("rating, bookings(room_id)")
-        .limit(500);
     let sum = 0;
     let count = 0;
-    for (const r of reviewsData ?? []) {
-        const rid =
-            (r as any)?.bookings?.room_id ??
-            (Array.isArray((r as any)?.bookings) ? (r as any)?.bookings?.[0]?.room_id : null);
+    const comments: Array<{ rating: number; comment: string; created_at: string }> = [];
+    const { reviews, relationMaps } = await getReviewAggregateContext();
+    for (const review of reviews) {
+        const rid = relationMaps.roomIdByBookingId.get(review.booking_id);
         if (rid !== roomId) continue;
-        const rating = Number((r as { rating?: unknown }).rating);
-        if (!Number.isFinite(rating)) continue;
-        sum += rating;
+        sum += review.rating;
         count += 1;
+        if (typeof review.comment === "string" && review.comment.trim()) {
+            comments.push({
+                rating: review.rating,
+                comment: review.comment.trim(),
+                created_at: review.created_at
+            });
+        }
     }
     const averageRating = count > 0 ? sum / count : null;
     const reviewCount = count;
+    comments.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
     res.json({
         room: { ...roomData, media: mediaWithUrls },
         hotel: hotelPayload,
-        rating: { average_rating: averageRating, review_count: reviewCount }
+        rating: { average_rating: averageRating, review_count: reviewCount },
+        reviews: comments.slice(0, 20)
     });
 });
 

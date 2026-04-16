@@ -58,12 +58,17 @@ type RoomDetailResponse = {
         average_rating: number | null;
         review_count: number;
     };
+    reviews?: Array<{
+        rating: number;
+        comment: string;
+        created_at: string;
+    }>;
 };
 
 async function fetchRoom(id: string): Promise<RoomDetailResponse | null> {
     const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/rooms/${id}`,
-        { next: { revalidate: 60 } }
+        { cache: "no-store" }
     );
     if (!res.ok) return null;
     return res.json();
@@ -86,12 +91,16 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
         );
     }
 
-    const { room, hotel, rating } = data;
+    const { room, hotel, rating, reviews } = data;
     const media = room.media ?? [];
     const filledStars =
         rating && rating.review_count > 0 && rating.average_rating != null
             ? Math.round(rating.average_rating)
             : 0;
+    const formattedRating =
+        rating && rating.review_count > 0 && rating.average_rating != null
+            ? rating.average_rating.toFixed(1)
+            : null;
 
     return (
         <div className="min-h-screen bg-background">
@@ -137,6 +146,11 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
                                     );
                                 })}
                             </span>
+                            {formattedRating && (
+                                <span className="text-sm font-medium text-muted-foreground">
+                                    {formattedRating} ({rating?.review_count ?? 0} reviews)
+                                </span>
+                            )}
                         </div>
 
                         <h1 className="mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -186,6 +200,41 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
                                 customPolicies={room.custom_policies ?? null}
                             />
                         </div>
+
+                        <section className="mt-10">
+                            <h2 className="text-lg font-semibold text-foreground">Guest Reviews</h2>
+                            {!reviews || reviews.length === 0 ? (
+                                <p className="mt-3 text-sm text-muted-foreground">
+                                    No review comments submitted for this room yet.
+                                </p>
+                            ) : (
+                                <ul className="mt-4 space-y-4">
+                                    {reviews.map((review) => (
+                                        <li
+                                            key={`${review.created_at}-${review.comment}`}
+                                            className="rounded-lg border border-border bg-card p-4"
+                                        >
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-500">
+                                                    <Star className="h-4 w-4 fill-current" />
+                                                    {review.rating.toFixed(1)}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {new Intl.DateTimeFormat("en-PH", {
+                                                        year: "numeric",
+                                                        month: "short",
+                                                        day: "numeric"
+                                                    }).format(new Date(review.created_at))}
+                                                </span>
+                                            </div>
+                                            <p className="mt-2 text-sm leading-relaxed text-foreground">
+                                                {review.comment}
+                                            </p>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </section>
                     </div>
 
                     {/* Booking widget (right) */}

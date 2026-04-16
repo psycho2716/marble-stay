@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useJsApiLoader } from "@react-google-maps/api";
+import { useMarbleGoogleMapsLoader } from "@/lib/googleMapsLoader";
 
 type AddressAutocompleteProps = {
   value: string;
@@ -27,12 +27,7 @@ export function AddressAutocomplete({
   onChangeRef.current = onChange;
   onPlaceSelectRef.current = onPlaceSelect;
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-  const { isLoaded } = useJsApiLoader({
-    id: "marble-stay-google",
-    googleMapsApiKey: apiKey,
-    libraries: ["places"],
-  });
+  const { apiKey, isLoaded } = useMarbleGoogleMapsLoader();
 
   useEffect(() => {
     setMounted(true);

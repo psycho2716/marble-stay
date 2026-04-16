@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, Marker } from "@react-google-maps/api";
+import { useMarbleGoogleMapsLoader } from "@/lib/googleMapsLoader";
 
 const ROMBLON_CENTER = { lat: 12.58, lng: 122.27 };
 
@@ -18,12 +19,7 @@ const mapContainerStyle = { width: "100%", height: "100%" };
 export function MapLocationPicker({ value, onChange, height = "280px" }: MapLocationPickerProps) {
   const [, setMap] = useState<google.maps.Map | null>(null);
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: "marble-stay-google",
-    googleMapsApiKey: apiKey,
-    libraries: ["places"],
-  });
+  const { apiKey, isLoaded, loadError } = useMarbleGoogleMapsLoader();
 
   const center = useMemo(() => value ?? ROMBLON_CENTER, [value]);
   const onMapLoad = useCallback((map: google.maps.Map) => setMap(map), []);

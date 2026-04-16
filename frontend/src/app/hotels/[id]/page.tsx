@@ -51,7 +51,7 @@ async function fetchHotel(id: string, page = 1): Promise<HotelDetailResponse | n
     );
     url.searchParams.set("page", String(page));
     url.searchParams.set("limit", "6");
-    const res = await fetch(url.toString(), { next: { revalidate: 60 } });
+    const res = await fetch(url.toString(), { cache: "no-store" });
 
     if (!res.ok) {
         return null;

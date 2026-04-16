@@ -1,7 +1,8 @@
 "use client";
 
 import { MapPin } from "lucide-react";
-import { useJsApiLoader, GoogleMap, Marker } from "@react-google-maps/api";
+import { GoogleMap, Marker } from "@react-google-maps/api";
+import { useMarbleGoogleMapsLoader } from "@/lib/googleMapsLoader";
 
 const MAP_CONTAINER_STYLE = {
     width: "100%",
@@ -44,12 +45,7 @@ export function HotelProfileMap({
     latitude,
     longitude
 }: HotelProfileMapProps) {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
-
-    const { isLoaded, loadError } = useJsApiLoader({
-        id: "marble-stay-google-map",
-        googleMapsApiKey: apiKey
-    });
+    const { apiKey, isLoaded, loadError } = useMarbleGoogleMapsLoader();
 
     const hasCoords =
         latitude != null &&
