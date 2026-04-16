@@ -15,6 +15,8 @@ type Room = {
     description?: string | null;
     media?: { type: string; path: string }[];
     main_image_url?: string | null;
+    average_rating?: number | null;
+    review_count?: number | null;
 };
 
 type HotelDetailResponse = {
@@ -178,6 +180,8 @@ export default async function HotelDetailPage({
                                                 base_price_night={room.base_price_night}
                                                 main_image_url={room.main_image_url}
                                                 currency={hotel.currency}
+                                                average_rating={room.average_rating ?? 0}
+                                                review_count={room.review_count ?? 0}
                                             />
                                         </li>
                                     ))}

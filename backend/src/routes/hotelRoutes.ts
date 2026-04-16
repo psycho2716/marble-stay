@@ -788,6 +788,26 @@ router.get("/hotels/:id", async (req, res) => {
         return;
     }
 
+    const sumByHotel = new Map<string, { sum: number; count: number }>();
+    const sumByRoom = new Map<string, { sum: number; count: number }>();
+    const { reviews, relationMaps } = await getReviewAggregateContext();
+    for (const review of reviews) {
+        const roomId = relationMaps.roomIdByBookingId.get(review.booking_id);
+        const hid = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
+        if (hid !== hotelId) continue;
+        const cur = sumByHotel.get(hotelId) ?? { sum: 0, count: 0 };
+        cur.sum += review.rating;
+        cur.count += 1;
+        sumByHotel.set(hotelId, cur);
+
+        if (roomId) {
+            const roomAggregate = sumByRoom.get(roomId) ?? { sum: 0, count: 0 };
+            roomAggregate.sum += review.rating;
+            roomAggregate.count += 1;
+            sumByRoom.set(roomId, roomAggregate);
+        }
+    }
+
     const rooms: Record<string, unknown>[] = [];
     for (const room of roomsRaw ?? []) {
         const r = { ...room } as Record<string, unknown>;
@@ -799,19 +819,13 @@ router.get("/hotels/:id", async (req, res) => {
                 .createSignedUrl(firstImage.path, 3600);
             if (signed?.signedUrl) r.main_image_url = signed.signedUrl;
         }
-        rooms.push(r);
-    }
 
-    const sumByHotel = new Map<string, { sum: number; count: number }>();
-    const { reviews, relationMaps } = await getReviewAggregateContext();
-    for (const review of reviews) {
-        const roomId = relationMaps.roomIdByBookingId.get(review.booking_id);
-        const hid = roomId ? relationMaps.hotelIdByRoomId.get(roomId) : null;
-        if (hid !== hotelId) continue;
-        const cur = sumByHotel.get(hotelId) ?? { sum: 0, count: 0 };
-        cur.sum += review.rating;
-        cur.count += 1;
-        sumByHotel.set(hotelId, cur);
+        const roomId = typeof room.id === "string" ? room.id : null;
+        const aggregate = roomId ? sumByRoom.get(roomId) : undefined;
+        r.review_count = aggregate?.count ?? 0;
+        r.average_rating = aggregate && aggregate.count > 0 ? aggregate.sum / aggregate.count : 0;
+
+        rooms.push(r);
     }
     const agg = sumByHotel.get(hotelId);
     const reviewCount = agg?.count ?? 0;

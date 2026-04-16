@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Star } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 
 export type HotelProfileRoomCardProps = {
@@ -9,6 +10,8 @@ export type HotelProfileRoomCardProps = {
     base_price_night: string;
     main_image_url?: string | null;
     currency?: string | null;
+    average_rating?: number | null;
+    review_count?: number | null;
     /** Optional badge text (e.g. "MOST POPULAR", "LUXURY TIER") shown top-right on image */
     badge?: string | null;
 };
@@ -20,8 +23,15 @@ export function HotelProfileRoomCard({
     base_price_night,
     main_image_url,
     currency,
+    average_rating,
+    review_count,
     badge
 }: HotelProfileRoomCardProps) {
+    const hasRating = typeof average_rating === "number" && Number.isFinite(average_rating);
+    const ratingText = hasRating ? average_rating.toFixed(1) : null;
+    const reviewCount = review_count ?? 0;
+    const reviewLabel = reviewCount === 1 ? "1 review" : `${reviewCount.toLocaleString()} reviews`;
+
     return (
         <article className="h-full flex flex-col overflow-hidden rounded border border-border bg-card">
             <Link
@@ -50,6 +60,13 @@ export function HotelProfileRoomCard({
             </Link>
             <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
                 <h3 className="font-semibold text-foreground">{name}</h3>
+                {hasRating && ratingText && (
+                    <p className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground">
+                        <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                        <span className="font-semibold text-foreground">{ratingText}</span>
+                        <span>({reviewLabel})</span>
+                    </p>
+                )}
                 <div className="shrink-0">
                     <p className="text-xl font-bold text-foreground">
                         {formatCurrency(base_price_night, currency)}
