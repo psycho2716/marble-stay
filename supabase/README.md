@@ -25,6 +25,7 @@ After migrations, `supabase db reset` runs **`seed.sql`** (see `config.toml` →
 
 - **Admin user (idempotent):** if `admin@marblestay.local` is not in `auth.users`, the seed creates it with password `AdminChangeMe123!`, email confirmed, `profiles.role = admin`, and `guest_onboarding_completed = true`.
 - If that user already exists (for example from migration `20260316100000_create_admin_user.sql`), the seed logs a notice and does nothing.
+- **Demo showcase users** (hotels + guests, shared password `demo_user1234`): see [DEMO-SEED-LOGINS.md](./DEMO-SEED-LOGINS.md).
 
 For **hosted** Supabase (or without resetting the DB), use the backend script instead:
 

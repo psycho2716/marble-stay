@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { dispatchNavAvatarRefresh } from "@/lib/navEvents";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -1230,10 +1231,7 @@ export default function HotelProfilePage() {
                                                         return;
                                                     }
                                                     toast.success("Account deleted.");
-                                                    if (typeof localStorage !== "undefined") {
-                                                        localStorage.removeItem("token");
-                                                        localStorage.removeItem("supabase_access_token");
-                                                    }
+                                                    clearClientAuth();
                                                     router.push("/login");
                                                 } finally {
                                                     setDeactivating(false);

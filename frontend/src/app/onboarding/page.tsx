@@ -218,8 +218,8 @@ export default function GuestOnboardingPage() {
                             </h1>
                             <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
                                 Tell us how you like to travel. We&apos;ll save your preferences and
-                                use them with Google Gemini to suggest hotels, rooms, and vibes that
-                                fit you — you can change this anytime in Profile → Preferences.
+                                use them to rank verified stays (budget, amenities, ratings) on your
+                                For you page — you can change this anytime in Profile → Preferences.
                             </p>
                             <button
                                 type="button"
@@ -242,7 +242,7 @@ export default function GuestOnboardingPage() {
                                 How do you usually travel?
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Pick one or more — this helps our AI understand your priorities.
+                                Pick one or more — we store these as free-text hints with your profile.
                             </p>
                             <div className="mt-6 grid gap-3 sm:grid-cols-2">
                                 {TRIP_STYLES.map((t) => {
@@ -360,8 +360,8 @@ export default function GuestOnboardingPage() {
                                 Anything else we should know?
                             </h2>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Optional details make Gemini recommendations sharper (dietary needs,
-                                accessibility, work hours, kids&apos; ages, etc.).
+                                Optional notes we keep on your profile (dietary needs, accessibility,
+                                work hours, kids&apos; ages, etc.).
                             </p>
                             <div className="mt-6 space-y-4">
                                 <div>

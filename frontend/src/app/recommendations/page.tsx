@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Sparkles } from "lucide-react";
+import { Heart, Loader2 } from "lucide-react";
 import { HotelCard } from "@/components/landing/HotelCard";
-import { formatNumberCompact } from "@/lib/format";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -18,11 +17,6 @@ function getAuthHeaders(): HeadersInit {
     };
 }
 
-type PersonalizedCacheMeta = {
-    hit?: boolean;
-    expires_at?: string | null;
-};
-
 type PersonalizedHotel = {
     id: string;
     name: string;
@@ -32,18 +26,13 @@ type PersonalizedHotel = {
     average_rating: number;
     review_count: number;
     min_price_night?: number | null;
-    ai_match_score?: number | null;
-    ai_match_why?: string | null;
-    ai_room_ideas?: string[] | null;
 };
 
 export default function ForYouRecommendationsPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
-    const [summary, setSummary] = useState("");
-    const [aiEnabled, setAiEnabled] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [hotels, setHotels] = useState<PersonalizedHotel[]>([]);
-    const [cacheMeta, setCacheMeta] = useState<PersonalizedCacheMeta | null>(null);
 
     const load = useCallback(async () => {
         const token = localStorage.getItem("token");
@@ -68,26 +57,17 @@ export default function ForYouRecommendationsPage() {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-            setSummary(
+            setLoadError(
                 (data as { error?: string }).error ?? "Could not load personalized recommendations."
             );
             setHotels([]);
-            setAiEnabled(false);
-            setCacheMeta(null);
             setLoading(false);
             return;
         }
 
-        const body = data as {
-            summary?: string;
-            ai_enabled?: boolean;
-            hotels?: PersonalizedHotel[];
-            cache?: PersonalizedCacheMeta;
-        };
-        setSummary(body.summary ?? "");
-        setAiEnabled(Boolean(body.ai_enabled));
+        const body = data as { hotels?: PersonalizedHotel[] };
+        setLoadError(null);
         setHotels(Array.isArray(body.hotels) ? body.hotels : []);
-        setCacheMeta(body.cache ?? null);
         setLoading(false);
     }, [router]);
 
@@ -99,7 +79,7 @@ export default function ForYouRecommendationsPage() {
         return (
             <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 bg-background px-4">
                 <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">Building your picks…</p>
+                <p className="text-sm text-muted-foreground">Loading your picks…</p>
             </div>
         );
     }
@@ -110,11 +90,11 @@ export default function ForYouRecommendationsPage() {
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                         <h1 className="flex items-center gap-2 mt-3 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                            <Sparkles className="h-7 w-7" />
+                            <Heart className="h-7 w-7 text-primary" />
                             Personalized stays
                         </h1>
                         <p className="mt-1 text-sm text-muted-foreground">
-                            Powered by your saved preferences and AI.
+                            Based on your saved preferences.
                         </p>
                     </div>
                     <Link
@@ -125,30 +105,13 @@ export default function ForYouRecommendationsPage() {
                     </Link>
                 </div>
 
-                <div className="mb-10 rounded-2xl border border-border bg-card p-5 shadow-sm sm:p-6">
-                    <p className="text-sm leading-relaxed text-foreground">{summary}</p>
-                    {cacheMeta?.hit === true && cacheMeta.expires_at ? (
-                        <p className="mt-3 text-xs text-muted-foreground">
-                            Showing saved AI insights. Next refresh after{" "}
-                            <time dateTime={cacheMeta.expires_at}>
-                                {new Date(cacheMeta.expires_at).toLocaleString(undefined, {
-                                    dateStyle: "medium",
-                                    timeStyle: "short"
-                                })}
-                            </time>{" "}
-                            (about every 12 hours) to save on model usage.
-                        </p>
-                    ) : null}
-                    {!aiEnabled && (
-                        <p className="mt-3 text-xs text-muted-foreground">
-                            Tip: add <code className="rounded bg-muted px-1">GEMINI_API_KEY</code>{" "}
-                            on the API server for full AI ranking. Standard catalog order is used
-                            otherwise.
-                        </p>
-                    )}
-                </div>
+                {loadError ? (
+                    <div className="mb-8 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        {loadError}
+                    </div>
+                ) : null}
 
-                {hotels.length === 0 ? (
+                {hotels.length === 0 && !loadError ? (
                     <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-12 text-center">
                         <p className="text-muted-foreground">
                             No verified hotels to show yet. Try again later or browse the directory.
@@ -160,10 +123,10 @@ export default function ForYouRecommendationsPage() {
                             Back to home
                         </Link>
                     </div>
-                ) : (
+                ) : hotels.length > 0 ? (
                     <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                         {hotels.map((h) => (
-                            <li key={h.id} className="flex flex-col gap-2">
+                            <li key={h.id}>
                                 <HotelCard
                                     id={h.id}
                                     name={h.name}
@@ -171,33 +134,19 @@ export default function ForYouRecommendationsPage() {
                                     imageUrl={h.profile_image_url ?? h.images?.[0] ?? null}
                                     rating={h.average_rating > 0 ? h.average_rating : null}
                                     reviewCount={h.review_count}
-                                    pricePerNight={
-                                        h.min_price_night != null
-                                            ? formatNumberCompact(h.min_price_night)
-                                            : null
-                                    }
+                                    pricePerNight={(() => {
+                                        const raw = h.min_price_night;
+                                        if (raw == null) return null;
+                                        const n = typeof raw === "number" ? raw : Number(raw);
+                                        if (!Number.isFinite(n) || n <= 0) return null;
+                                        return n;
+                                    })()}
                                     currency="PHP"
                                 />
-                                {(h.ai_match_why ||
-                                    (h.ai_room_ideas && h.ai_room_ideas.length)) && (
-                                    <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                                        {h.ai_match_score != null && (
-                                            <span className="font-semibold text-foreground">
-                                                Match {Math.round(h.ai_match_score)}% ·{" "}
-                                            </span>
-                                        )}
-                                        {h.ai_match_why}
-                                        {h.ai_room_ideas && h.ai_room_ideas.length > 0 && (
-                                            <span className="mt-1 block text-[11px]">
-                                                Rooms: {h.ai_room_ideas.join(" · ")}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
                             </li>
                         ))}
                     </ul>
-                )}
+                ) : null}
             </div>
         </div>
     );

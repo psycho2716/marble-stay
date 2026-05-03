@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 
 const guestLinks = [
   { href: "/bookings", label: "My Bookings" },
@@ -15,8 +16,7 @@ export function GuestNavbar() {
 
   function handleLogout() {
     if (typeof window === "undefined") return;
-    window.localStorage.removeItem("token");
-    window.localStorage.removeItem("supabase_access_token");
+    clearClientAuth();
     router.push("/login");
     router.refresh();
   }

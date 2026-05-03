@@ -10,7 +10,8 @@ export type HotelCardProps = {
     imageUrl: string | null;
     rating: number | null;
     reviewCount: number;
-    pricePerNight?: string | null;
+    /** Raw amount or plain numeric string; avoid pre-grouped strings like "2,800" (now tolerated via format). */
+    pricePerNight?: string | number | null;
     currency?: string | null;
 };
 

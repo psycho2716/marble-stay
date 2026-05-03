@@ -2,7 +2,10 @@ const compactNumberFmt = new Intl.NumberFormat("en-PH");
 
 export function formatNumberCompact(value: string | number | null | undefined): string {
   if (value == null || value === "") return "0";
-  const n = typeof value === "number" ? value : Number(value);
+  const n =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(/,/g, "").trim());
   if (!Number.isFinite(n)) return "0";
   return compactNumberFmt.format(Math.round(n));
 }

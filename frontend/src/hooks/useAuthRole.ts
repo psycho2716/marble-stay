@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { syncMarbleRoleCookie } from "@/lib/marble-role-cookie";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -23,6 +24,7 @@ export function useAuthRole(): AuthState {
 
     if (!token) {
       setRole(null);
+      syncMarbleRoleCookie(null);
       setLoading(false);
       return;
     }
@@ -37,12 +39,22 @@ export function useAuthRole(): AuthState {
         const r = data?.role;
         if (r === "guest" || r === "hotel" || r === "admin") {
           setRole(r);
+          try {
+            window.localStorage.setItem("user_role", r);
+          } catch {
+            /* ignore quota / private mode */
+          }
+          syncMarbleRoleCookie(r);
         } else {
           setRole(null);
+          syncMarbleRoleCookie(null);
         }
       })
       .catch(() => {
-        if (!cancelled) setRole(null);
+        if (!cancelled) {
+          setRole(null);
+          syncMarbleRoleCookie(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

@@ -15,6 +15,7 @@ import {
   paymentMethodLabel,
   pipeBookingEreceiptPdf,
 } from "../lib/bookingReceiptPdf";
+import { resolveHotelAssetUrl } from "../lib/resolveHotelAssetUrl";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -334,18 +335,10 @@ async function signedHotelCoverUrl(hotel: {
   profile_image?: string | null;
   images?: string[] | null;
 }): Promise<string | null> {
-  const tryPath = async (path: string | null | undefined) => {
-    const p = path?.trim();
-    if (!p) return null;
-    const { data: signed } = await supabaseAdmin.storage
-      .from("hotel-assets")
-      .createSignedUrl(p, 3600);
-    return signed?.signedUrl ?? null;
-  };
-  const fromProfile = await tryPath(hotel.profile_image ?? null);
+  const fromProfile = await resolveHotelAssetUrl(hotel.profile_image ?? null);
   if (fromProfile) return fromProfile;
   const first = hotel.images?.find((x) => typeof x === "string" && x.trim());
-  return tryPath(first ?? null);
+  return resolveHotelAssetUrl(first ?? null);
 }
 
 /** Signed view URLs for room gallery (guest booking detail). */
@@ -358,10 +351,8 @@ async function signedRoomMediaUrls(
     const path = (item as { path?: string })?.path?.trim();
     if (!path) continue;
     const type = (item as { type?: string }).type === "video" ? "video" : "image";
-    const { data: signed } = await supabaseAdmin.storage
-      .from("hotel-assets")
-      .createSignedUrl(path, 3600);
-    if (signed?.signedUrl) out.push({ type, url: signed.signedUrl });
+    const url = await resolveHotelAssetUrl(path);
+    if (url) out.push({ type, url });
   }
   return out;
 }

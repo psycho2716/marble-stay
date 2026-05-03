@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 
 const guestNavLinks = [
   { href: "/profile", label: "Profile" },
@@ -27,8 +28,7 @@ export function PublicNavbar() {
 
   function handleLogout() {
     if (typeof window === "undefined") return;
-    window.localStorage.removeItem("token");
-    window.localStorage.removeItem("supabase_access_token");
+    clearClientAuth();
     setIsLoggedIn(false);
     router.push("/");
     router.refresh();

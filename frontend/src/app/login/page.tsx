@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { LoginCard } from "@/components/auth/LoginCard";
+import { syncMarbleRoleCookie } from "@/lib/marble-role-cookie";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -59,6 +60,9 @@ function LoginPageInner() {
                 }
                 const userRole = data.role ?? "guest";
                 localStorage.setItem("user_role", userRole);
+                syncMarbleRoleCookie(
+                    userRole === "hotel" || userRole === "admin" ? userRole : "guest"
+                );
                 // Used by navbar profile menu. Fallback decoding still exists for JWTs.
                 localStorage.setItem("user_email", email);
             }

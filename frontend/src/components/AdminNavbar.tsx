@@ -14,6 +14,7 @@ import {
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 
 const ADMIN_LINKS = [
     { href: "/admin/verification", label: "Verification" },
@@ -52,10 +53,7 @@ export function AdminNavbar() {
 
     function handleLogout() {
         if (typeof window === "undefined") return;
-        window.localStorage.removeItem("token");
-        window.localStorage.removeItem("supabase_access_token");
-        window.localStorage.removeItem("user_role");
-        window.localStorage.removeItem("user_email");
+        clearClientAuth();
         router.push("/login");
         router.refresh();
     }

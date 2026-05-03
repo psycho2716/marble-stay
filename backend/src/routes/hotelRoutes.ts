@@ -12,6 +12,7 @@ import {
     notifyGuestPaymentApproved,
     notifyGuestReceiptRejected
 } from "../realtime";
+import { resolveHotelAssetUrl } from "../lib/resolveHotelAssetUrl";
 
 const router = Router();
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
@@ -515,15 +516,12 @@ router.get("/hotels/top-rated", async (_req, res) => {
         }));
     }
 
-    // Add signed profile_image_url for each hotel
+    // Add profile_image_url (signed storage path or passthrough https demo URLs)
     for (const row of result) {
         const profileImage = (row as { profile_image?: string | null }).profile_image;
         if (profileImage) {
-            const { data: signed } = await supabaseAdmin.storage
-                .from("hotel-assets")
-                .createSignedUrl(profileImage, 3600);
-            if (signed?.signedUrl)
-                (row as Record<string, unknown>).profile_image_url = signed.signedUrl;
+            const url = await resolveHotelAssetUrl(profileImage);
+            if (url) (row as Record<string, unknown>).profile_image_url = url;
         }
     }
 
@@ -814,10 +812,8 @@ router.get("/hotels/:id", async (req, res) => {
         const media = (room.media as { type?: string; path: string }[] | null) ?? [];
         const firstImage = media.find((m) => m?.path && (m.type === "image" || !m.type));
         if (firstImage?.path) {
-            const { data: signed } = await supabaseAdmin.storage
-                .from("hotel-assets")
-                .createSignedUrl(firstImage.path, 3600);
-            if (signed?.signedUrl) r.main_image_url = signed.signedUrl;
+            const mainUrl = await resolveHotelAssetUrl(firstImage.path);
+            if (mainUrl) r.main_image_url = mainUrl;
         }
 
         const roomId = typeof room.id === "string" ? room.id : null;
@@ -853,16 +849,12 @@ router.get("/hotels/:id", async (req, res) => {
         amenities: Array.from(amenitySet).sort((a, b) => a.localeCompare(b))
     };
     if (hotel.profile_image) {
-        const { data: signed } = await supabaseAdmin.storage
-            .from("hotel-assets")
-            .createSignedUrl(hotel.profile_image, 3600);
-        if (signed?.signedUrl) outHotel.profile_image_url = signed.signedUrl;
+        const url = await resolveHotelAssetUrl(hotel.profile_image);
+        if (url) outHotel.profile_image_url = url;
     }
     if (hotel.cover_image) {
-        const { data: signed } = await supabaseAdmin.storage
-            .from("hotel-assets")
-            .createSignedUrl(hotel.cover_image, 3600);
-        if (signed?.signedUrl) outHotel.cover_image_url = signed.signedUrl;
+        const url = await resolveHotelAssetUrl(hotel.cover_image);
+        if (url) outHotel.cover_image_url = url;
     }
     res.json({
         hotel: outHotel,
@@ -916,14 +908,12 @@ router.get("/rooms/:id", async (req, res) => {
     const mediaWithUrls: { type: string; path: string; url: string }[] = [];
     for (const item of media) {
         if (!item?.path) continue;
-        const { data: signed } = await supabaseAdmin.storage
-            .from("hotel-assets")
-            .createSignedUrl(item.path, 3600);
-        if (signed?.signedUrl) {
+        const url = await resolveHotelAssetUrl(item.path);
+        if (url) {
             mediaWithUrls.push({
                 type: item.type || "image",
                 path: item.path,
-                url: signed.signedUrl
+                url
             });
         }
     }
@@ -1939,11 +1929,9 @@ router.get("/hotel/rooms", authenticate, requireRole("hotel"), async (req, res) 
             room.media_urls = [];
             for (const item of room.media) {
                 if (item?.path) {
-                    const { data: signed } = await supabaseAdmin.storage
-                        .from("hotel-assets")
-                        .createSignedUrl(item.path, 3600);
-                    if (signed?.signedUrl) {
-                        room.media_urls.push({ type: item.type || "image", url: signed.signedUrl });
+                    const url = await resolveHotelAssetUrl(item.path);
+                    if (url) {
+                        room.media_urls.push({ type: item.type || "image", url });
                     }
                 }
             }
@@ -1988,13 +1976,11 @@ router.get("/hotel/rooms/:id", authenticate, requireRole("hotel"), async (req, r
         (room as Record<string, unknown>).media_urls = [];
         for (const item of media) {
             if (!item?.path) continue;
-            const { data: signed } = await supabaseAdmin.storage
-                .from("hotel-assets")
-                .createSignedUrl(item.path, 3600);
-            if (signed?.signedUrl) {
+            const url = await resolveHotelAssetUrl(item.path);
+            if (url) {
                 (room as { media_urls: Array<{ type: string; url: string }> }).media_urls.push({
                     type: item.type || "image",
-                    url: signed.signedUrl
+                    url
                 });
             }
         }

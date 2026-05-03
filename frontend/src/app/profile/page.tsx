@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { dispatchNavAvatarRefresh } from "@/lib/navEvents";
 import { GUEST_COUNTRY_OPTIONS } from "@/lib/guest-countries";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -1355,8 +1356,7 @@ function GuestProfilePageInner() {
                                                         return;
                                                     }
                                                     toast.success("Account deleted.");
-                                                    localStorage.removeItem("token");
-                                                    localStorage.removeItem("supabase_access_token");
+                                                    clearClientAuth();
                                                     router.push("/login");
                                                 } finally {
                                                     setDeactivating(false);

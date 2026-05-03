@@ -8,6 +8,7 @@ import { ChevronDown, LogOut, User } from "lucide-react";
 import { MarbleStayLogo } from "@/components/MarbleStayLogo";
 import userPlaceholder from "@/public/images/user.png";
 import { MARBLESTAY_NAV_AVATAR_REFRESH } from "@/lib/navEvents";
+import { clearClientAuth } from "@/lib/clear-client-auth";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -213,10 +214,7 @@ export function AppNavbar() {
     function handleLogout() {
         if (typeof window === "undefined") return;
         const wasHotel = role === "hotel";
-        window.localStorage.removeItem("token");
-        window.localStorage.removeItem("supabase_access_token");
-        window.localStorage.removeItem("user_role");
-        window.localStorage.removeItem("user_email");
+        clearClientAuth();
         setNavbarAvatarUrl(null);
         setEmail(null);
         setRole("public");

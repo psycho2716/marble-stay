@@ -31,6 +31,7 @@ export function RoleGuard({
 }: RoleGuardProps) {
   const router = useRouter();
   const { role, loading, isAuthenticated } = useAuthRole();
+  const allowedSortedKey = [...allowedRoles].sort().join(",");
 
   useEffect(() => {
     if (loading) return;
@@ -40,11 +41,12 @@ export function RoleGuard({
       return;
     }
 
-    if (!allowedRoles.includes(role)) {
+    const allowed = allowedSortedKey.split(",") as AuthRole[];
+    if (!allowed.includes(role)) {
       const target = wrongRoleRedirect ?? DEFAULT_REDIRECT[role];
       router.replace(target);
     }
-  }, [loading, isAuthenticated, role, allowedRoles, loginPath, wrongRoleRedirect, router]);
+  }, [loading, isAuthenticated, role, allowedSortedKey, loginPath, wrongRoleRedirect, router]);
 
   if (loading) {
     return (
