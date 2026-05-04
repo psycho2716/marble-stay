@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Payment — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-md flex-1 px-4 py-10">
+      <h1 class="text-2xl font-bold">Payment</h1>
+      <p class="mt-2 text-sm text-muted-foreground">Confirm below to complete your reservation.</p>
+      <div id="box" class="mt-6 rounded-xl border border-border bg-card p-6"></div>
+      <button type="button" id="pay-btn" class="mt-6 w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground">
+        Confirm payment
+      </button>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      const BOOKINGS_KEY = "marble_stay_bookings_local";
+      function getExtra() {
+        try {
+          return JSON.parse(localStorage.getItem(BOOKINGS_KEY) || "[]");
+        } catch {
+          return [];
+        }
+      }
+      function setExtra(rows) {
+        localStorage.setItem(BOOKINGS_KEY, JSON.stringify(rows));
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireGuest("login.html");
+        if (!s) return;
+        MarbleChrome.mount({ area: "guest", active: "payment" });
+        const id = MarbleUtils.getQueryParam("bookingId");
+        const b = MarbleData.bookingById(data, id);
+        const box = document.getElementById("box");
+        if (!b || b.userId !== s.userId) {
+          box.textContent = "Booking not found.";
+          document.getElementById("pay-btn").classList.add("hidden");
+          return;
+        }
+        const room = MarbleData.roomById(data, b.roomId);
+        const hotel = room ? MarbleData.hotelById(data, room.hotelId) : null;
+        box.innerHTML =
+          "<p class=\"font-semibold\">" +
+          (hotel ? hotel.name : "") +
+          '</p><p class="text-sm text-muted-foreground">' +
+          (room ? room.name : "") +
+          '</p><p class="mt-4 text-2xl font-bold">' +
+          MarbleUtils.formatCurrency(b.totalAmount, hotel && hotel.currency) +
+          '</p><p class="mt-2 text-xs text-muted-foreground">Status: ' +
+          b.paymentStatus +
+          "</p>";
+
+        document.getElementById("pay-btn").addEventListener("click", function () {
+          const extra = getExtra();
+          const i = extra.findIndex(function (x) {
+            return x.id === b.id;
+          });
+          if (i >= 0) {
+            extra[i] = {
+              ...extra[i],
+              paymentStatus: "paid",
+              status: "confirmed"
+            };
+            setExtra(extra);
+          }
+          window.location.href = "bookings.html";
+        });
+      });
+    </script>
+  </body>
+</html>

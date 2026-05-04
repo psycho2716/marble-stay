@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Book — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-lg flex-1 px-4 py-10">
+      <h1 class="text-2xl font-bold">Complete booking</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Review your dates, then continue to secure payment.</p>
+      <form id="book-form" class="mt-6 space-y-4">
+        <div>
+          <label class="text-sm font-medium">Check-in</label>
+          <input name="checkIn" type="date" required class="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="text-sm font-medium">Check-out</label>
+          <input name="checkOut" type="date" required class="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        </div>
+        <div id="book-summary" class="rounded-lg border border-border bg-card p-4 text-sm"></div>
+        <button type="submit" class="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground">Continue to payment</button>
+      </form>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      const BOOKINGS_KEY = "marble_stay_bookings_local";
+      function getExtra() {
+        try {
+          return JSON.parse(localStorage.getItem(BOOKINGS_KEY) || "[]");
+        } catch {
+          return [];
+        }
+      }
+      function saveExtra(rows) {
+        localStorage.setItem(BOOKINGS_KEY, JSON.stringify(rows));
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireGuest("login.html");
+        if (!s) return;
+        MarbleChrome.mount({ area: "guest", active: "book" });
+        const roomId = MarbleUtils.getQueryParam("roomId");
+        const room = MarbleData.roomById(data, roomId);
+        if (!room) {
+          document.getElementById("book-form").innerHTML = "<p>Invalid room.</p>";
+          return;
+        }
+        const hotel = MarbleData.hotelById(data, room.hotelId);
+        const nights = 2;
+        const total = room.basePriceNight * nights;
+        document.getElementById("book-summary").innerHTML =
+          "<strong>" +
+          (hotel && hotel.name) +
+          "</strong><br/>" +
+          room.name +
+          "<br/><span class=\"text-muted-foreground\">Estimated total for " +
+          nights +
+          " nights: </span><strong>" +
+          MarbleUtils.formatCurrency(total, hotel && hotel.currency) +
+          "</strong>";
+
+        document.getElementById("book-form").addEventListener("submit", function (e) {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          const id =
+            typeof crypto !== "undefined" && crypto.randomUUID
+              ? crypto.randomUUID()
+              : "b-" + Date.now();
+          const row = {
+            id: id,
+            userId: s.userId,
+            roomId: room.id,
+            checkIn: fd.get("checkIn"),
+            checkOut: fd.get("checkOut"),
+            bookingType: "nightly",
+            totalAmount: total,
+            status: "pending",
+            paymentStatus: "pending",
+            paymentMethod: "online",
+            hourlyHours: null
+          };
+          const extra = getExtra();
+          extra.push(row);
+          saveExtra(extra);
+          window.location.href = "payment.html?bookingId=" + encodeURIComponent(id);
+        });
+      });
+    </script>
+  </body>
+</html>

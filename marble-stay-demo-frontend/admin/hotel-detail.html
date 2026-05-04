@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotel — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-4xl flex-1 px-4 py-8" id="main"></main>
+    <div id="marble-footer"></div>
+    <script src="../js/utils.js"></script>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/maps.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireAdmin();
+        if (!s) return;
+        MarbleChrome.mount({ area: "admin", active: "hotel-detail" });
+        const id = MarbleUtils.getHotelDetailId();
+        const hotel = MarbleData.hotelById(data, id);
+        const el = document.getElementById("main");
+        if (!hotel) {
+          el.innerHTML = "<p>Not found.</p>";
+          return;
+        }
+        const vst = MarbleData.verificationStatusOf(hotel);
+        el.innerHTML =
+          '<a href="hotels.html" class="text-sm text-primary hover:underline">← Hotels</a>' +
+          '<div class="mt-6 rounded-xl border border-border bg-card p-6"><h1 class="text-2xl font-bold">' +
+          hotel.name +
+          '</h1><p class="mt-2 text-sm capitalize text-muted-foreground">' +
+          vst +
+          '</p><p class="mt-4 text-sm">' +
+          hotel.address +
+          '</p><p class="mt-2 text-sm text-muted-foreground">' +
+          hotel.contactEmail +
+          " · " +
+          hotel.contactPhone +
+          '</p><div id="mmap" class="mt-6 h-64 rounded-lg border border-border"></div>' +
+          '<a class="mt-4 inline-block text-sm font-medium text-primary hover:underline" target="_blank" rel="noopener" href="https://www.google.com/maps?q=' +
+          hotel.latitude +
+          "," +
+          hotel.longitude +
+          '">Open in Google Maps →</a></div>';
+        MarbleMaps.renderMap(
+          document.getElementById("mmap"),
+          { lat: Number(hotel.latitude), lng: Number(hotel.longitude) }
+        );
+      });
+    </script>
+  </body>
+</html>

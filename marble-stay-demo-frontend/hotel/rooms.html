@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rooms — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-8">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 class="text-3xl font-bold">Manage Rooms</h1>
+          <p id="rooms-subtitle" class="mt-1 text-muted-foreground"></p>
+        </div>
+        <a
+          id="btn-add-room"
+          href="room-new.html"
+          class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >Add room</a
+        >
+      </div>
+      <div id="marble-pending-banner-root" class="mt-6"></div>
+      <ul id="list" class="mt-8 list-none space-y-3 p-0"></ul>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/utils.js"></script>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script src="../js/hotel-pending-banner.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireHotel();
+        if (!s) return;
+        MarbleChrome.mount({ area: "hotel", active: "rooms", isHotelSection: true });
+        const hotel = MarbleData.hotelById(data, s.hotelId);
+        const ul = document.getElementById("list");
+        if (!hotel) {
+          ul.innerHTML = "<li>No hotel linked.</li>";
+          return;
+        }
+        MarbleHotelPendingBanner.mount(document.getElementById("marble-pending-banner-root"), hotel);
+        const pendingNotice = MarbleHotelPendingBanner.shouldShowNotice(hotel);
+        const rooms = MarbleData.roomsForHotel(data, hotel.id);
+        const roomCountShown = pendingNotice ? 0 : rooms.length;
+        document.getElementById("rooms-subtitle").textContent =
+          "Add, edit, and manage your property listings. " + roomCountShown + " rooms.";
+        document.getElementById("btn-add-room").classList.toggle("hidden", pendingNotice);
+        if (pendingNotice) {
+          ul.innerHTML = "";
+          ul.classList.add("hidden");
+          return;
+        }
+        ul.classList.remove("hidden");
+        ul.innerHTML = rooms
+          .map(function (r) {
+            return (
+              '<li class="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4">' +
+              "<div><p class=\"font-semibold\">" +
+              r.name +
+              '</p><p class="text-sm text-muted-foreground">' +
+              MarbleUtils.formatCurrency(r.basePriceNight, hotel.currency) +
+              " / night</p></div>" +
+              '<a href="room-edit.html?id=' +
+              encodeURIComponent(r.id) +
+              '" class="text-sm font-medium text-primary hover:underline">Edit</a></li>'
+            );
+          })
+          .join("");
+      });
+    </script>
+  </body>
+</html>

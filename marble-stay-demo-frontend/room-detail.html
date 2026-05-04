@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Room — Marble Stay</title>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="assets/app.css" />
+    </head>
+    <body class="flex min-h-screen flex-col bg-background" data-base="">
+        <div id="marble-header"></div>
+        <main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8" id="main"></main>
+        <div id="marble-footer"></div>
+        <script src="js/utils.js"></script>
+        <script src="js/data.js"></script>
+        <script src="js/auth.js"></script>
+        <script src="js/chrome.js"></script>
+        <script>
+            (function () {
+                var BOOKINGS_KEY = "marble_stay_bookings_local";
+
+                function esc(s) {
+                    return String(s ?? "")
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;");
+                }
+
+                function parseYMD(s) {
+                    var p = String(s).split("-");
+                    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+                }
+
+                function nightsBetween(checkIn, checkOut) {
+                    if (!checkIn || !checkOut) return 0;
+                    var n = Math.round((parseYMD(checkOut) - parseYMD(checkIn)) / 86400000);
+                    return n > 0 ? n : 0;
+                }
+
+                function formatPolicyTime(t) {
+                    if (!t) return "";
+                    var p = String(t).split(":");
+                    var h = Number(p[0]);
+                    var m = p[1] ? Number(p[1]) : 0;
+                    if (!Number.isFinite(h)) return esc(t);
+                    var ap = h >= 12 ? "PM" : "AM";
+                    var h12 = h % 12;
+                    if (h12 === 0) h12 = 12;
+                    var mm = Number.isFinite(m) && m ? ":" + String(m).padStart(2, "0") : "";
+                    return h12 + mm + " " + ap;
+                }
+
+                function mergeGalleryUrls(room, hotel) {
+                    var seen = {};
+                    var out = [];
+                    function push(u) {
+                        if (!u || seen[u]) return;
+                        seen[u] = true;
+                        out.push(u);
+                    }
+                    (room.media || []).forEach(push);
+                    (hotel && hotel.images ? hotel.images : []).forEach(push);
+                    return out.length ? out : [""];
+                }
+
+                function amenityIconSvg(key) {
+                    var k = String(key).toLowerCase();
+                    if (k === "wifi")
+                        return '<svg class="h-3.5 w-3.5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>';
+                    if (k === "tv")
+                        return '<svg class="h-3.5 w-3.5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>';
+                    if (k === "minibar")
+                        return '<svg class="h-3.5 w-3.5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>';
+                    if (k === "sea_view" || k === "sea view")
+                        return '<svg class="h-3.5 w-3.5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>';
+                    return '<svg class="h-3.5 w-3.5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
+                }
+
+                function starsRowHtml(avg) {
+                    var filled = avg != null && Number.isFinite(avg) ? Math.round(avg) : 0;
+                    var out = '<span class="inline-flex items-center gap-0.5">';
+                    var starPath =
+                        '<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>';
+                    for (var i = 1; i <= 5; i++) {
+                        if (i <= filled) {
+                            out +=
+                                '<svg class="h-4 w-4 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">' +
+                                starPath +
+                                "</svg>";
+                        } else {
+                            out +=
+                                '<svg class="h-4 w-4 text-amber-400" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path stroke="currentColor" stroke-width="1.2" d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>';
+                        }
+                    }
+                    out += "</span>";
+                    return out;
+                }
+
+                function ratingSummaryText(avg, count) {
+                    if (count <= 0) return "";
+                    var a = avg != null && Number.isFinite(avg) ? avg.toFixed(1) : "—";
+                    return (
+                        '<span class="ml-2 text-sm font-medium text-foreground">' +
+                        esc(a) +
+                        ' <span class="font-normal text-muted-foreground">(' +
+                        count +
+                        " reviews)</span></span>"
+                    );
+                }
+
+                function ratingSummaryTextShort(avg, count) {
+                    if (count <= 0) return "";
+                    var a = avg != null && Number.isFinite(avg) ? avg.toFixed(1) : "—";
+                    return esc(a) + " (" + count + " reviews)";
+                }
+
+                function formatReviewDate(iso) {
+                    if (!iso) return "";
+                    try {
+                        var d = new Date(iso + "T12:00:00");
+                        return d.toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric"
+                        });
+                    } catch (_) {
+                        return esc(iso);
+                    }
+                }
+
+                function getExtraBookings() {
+                    try {
+                        return JSON.parse(localStorage.getItem(BOOKINGS_KEY) || "[]");
+                    } catch (_) {
+                        return [];
+                    }
+                }
+
+                function saveExtraBookings(rows) {
+                    localStorage.setItem(BOOKINGS_KEY, JSON.stringify(rows));
+                }
+
+                MarbleData.loadData().then(async function (data) {
+                    await MarbleAuth.ensureSeededUsers(data);
+                    MarbleChrome.mount({
+                        area: "auto",
+                        active: location.pathname,
+                        isHotelSection: false
+                    });
+
+                    var id = MarbleUtils.getRoomDetailId();
+                    var room = MarbleData.roomById(data, id);
+                    var el = document.getElementById("main");
+                    if (!room) {
+                        el.innerHTML =
+                            '<p class="text-sm text-muted-foreground">Room not found.</p>';
+                        return;
+                    }
+
+                    var hotel = MarbleData.hotelById(data, room.hotelId);
+                    var cur = MarbleAuth.getSession();
+                    var needsOnboarding = cur && cur.role === "guest" && !cur.onboardingComplete;
+                    var isGuest = cur && cur.role === "guest" && cur.onboardingComplete;
+                    var urls = mergeGalleryUrls(room, hotel);
+                    var revSummary = MarbleData.roomRatingSummary(data, room.id);
+                    var reviews = MarbleData.roomReviewsForRoom(data, room.id);
+                    var pay = MarbleData.paymentMethodForHotel(data, room.hotelId);
+                    var currency = hotel && hotel.currency ? hotel.currency : "PHP";
+                    var ciLabel =
+                        hotel && hotel.checkInTime
+                            ? formatPolicyTime(hotel.checkInTime)
+                            : "2:00 PM";
+                    var coLabel =
+                        hotel && hotel.checkOutTime
+                            ? formatPolicyTime(hotel.checkOutTime)
+                            : "11:00 AM";
+                    var roomTypeLabel = esc(String(room.roomType || "room").replace(/_/g, " "));
+                    var qrSrc = "assets/sample-qr.jpg";
+
+                    var backHref = MarbleUtils.hotelDetailHref(room.hotelId);
+                    var loginNext = encodeURIComponent(MarbleUtils.roomDetailHref(room.id));
+
+                    var thumbsHtml = "";
+                    var thumbCount = Math.min(4, urls.length);
+                    var moreCount = urls.length > 4 ? urls.length - 4 : 0;
+                    for (var ti = 0; ti < thumbCount; ti++) {
+                        var isMoreCell = moreCount > 0 && ti === 3;
+                        var imgUrl = urls[ti];
+                        var ring =
+                            ti === 0
+                                ? " ring-2 ring-primary ring-offset-2 ring-offset-background"
+                                : "";
+                        thumbsHtml +=
+                            '<button type="button" data-room-thumb="' +
+                            ti +
+                            '" class="relative h-20 min-w-[4.5rem] flex-1 max-w-[7.5rem] overflow-hidden rounded-lg border border-border bg-muted text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary' +
+                            ring +
+                            '">';
+                        thumbsHtml +=
+                            '<img src="' +
+                            esc(imgUrl) +
+                            '" alt="" class="h-full w-full object-cover" />';
+                        if (isMoreCell) {
+                            thumbsHtml +=
+                                '<span class="absolute inset-0 flex items-center justify-center bg-black/55 text-sm font-semibold text-white">+' +
+                                moreCount +
+                                " More</span>";
+                        }
+                        thumbsHtml += "</button>";
+                    }
+
+                    var amenitiesHtml = (room.amenities || [])
+                        .map(function (a) {
+                            var label = esc(String(a).replace(/_/g, " "));
+                            return (
+                                '<span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground">' +
+                                amenityIconSvg(a) +
+                                label +
+                                "</span>"
+                            );
+                        })
+                        .join("");
+
+                    var reviewsHtml = "";
+                    if (reviews.length === 0) {
+                        reviewsHtml =
+                            '<p class="text-sm text-muted-foreground">No review comments submitted for this room yet.</p>';
+                    } else {
+                        reviewsHtml = reviews
+                            .map(function (r) {
+                                return (
+                                    '<div class="rounded-lg border border-border bg-card p-4">' +
+                                    '<div class="flex items-start justify-between gap-2">' +
+                                    '<span class="inline-flex items-center gap-1 text-sm font-semibold text-foreground"><svg class="h-4 w-4 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>' +
+                                    esc(
+                                        String(r.rating != null ? Number(r.rating).toFixed(1) : "")
+                                    ) +
+                                    '</span><span class="text-xs text-muted-foreground">' +
+                                    esc(formatReviewDate(r.date)) +
+                                    "</span></div>" +
+                                    '<p class="mt-3 text-sm text-foreground">' +
+                                    esc(r.comment || "") +
+                                    "</p></div>"
+                                );
+                            })
+                            .join("");
+                    }
+
+                    var hourlyBlock =
+                        room.offerHourly && room.hourlyRate != null
+                            ? '<p class="mt-1 text-sm text-muted-foreground">Hourly: ' +
+                              MarbleUtils.formatCurrency(room.hourlyRate, currency) +
+                              "/hr</p>"
+                            : "";
+
+                    var paymentBlock = "";
+                    if (isGuest) {
+                        paymentBlock =
+                            '<div class="mt-6 border-t border-border pt-6">' +
+                            '<p class="text-sm font-semibold text-foreground">Payment method</p>' +
+                            '<div class="mt-3 space-y-3">' +
+                            '<label class="flex cursor-pointer items-center gap-2 text-sm">' +
+                            '<input type="radio" name="rd-pay" value="cash" class="h-4 w-4 border-border text-primary" checked />' +
+                            "<span>Cash</span></label>" +
+                            '<label class="flex cursor-pointer items-center gap-2 text-sm">' +
+                            '<input type="radio" name="rd-pay" value="online" class="h-4 w-4 border-border text-primary" />' +
+                            "<span>Online payment (scan QR)</span></label></div>" +
+                            '<div id="rd-online-block" class="mt-4 hidden space-y-3">' +
+                            '<div class="flex justify-center rounded-lg border border-border bg-white p-4">' +
+                            '<img src="' +
+                            esc(qrSrc) +
+                            '" width="180" height="180" alt="Payment QR code" class="h-44 w-44 object-contain" />' +
+                            "</div>" +
+                            '<div><label for="rd-receipt" class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upload payment receipt</label>' +
+                            '<input id="rd-receipt" type="file" accept="image/*,.pdf,application/pdf" class="mt-1 block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-muted file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-foreground" />' +
+                            '<p id="rd-receipt-hint" class="mt-1 hidden text-xs text-destructive">Please upload a receipt image or PDF to confirm an online payment.</p></div>' +
+                            '<div class="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">' +
+                            (pay
+                                ? "<p>Account name: " +
+                                  esc(pay.accountName || pay.label || "") +
+                                  "</p><p>Account number: " +
+                                  esc(pay.accountNumber || "") +
+                                  "</p>"
+                                : "<p>Demo payment details unavailable.</p>") +
+                            "</div></div></div>";
+                    }
+
+                    var breakdownBlock = "";
+                    if (isGuest) {
+                        breakdownBlock =
+                            '<div id="rd-breakdown" class="mt-6 space-y-2 border-t border-border pt-6 text-sm">' +
+                            '<div class="flex justify-between gap-4 text-muted-foreground">' +
+                            '<span id="rd-line-nights"></span>' +
+                            '<span id="rd-line-sub" class="shrink-0 text-foreground"></span></div>' +
+                            '<div class="flex justify-between gap-4 text-muted-foreground">' +
+                            "<span>Service fee</span>" +
+                            '<span id="rd-line-fee" class="shrink-0 text-foreground"></span></div>' +
+                            '<div class="my-2 h-px bg-border"></div>' +
+                            '<div class="flex justify-between gap-4 font-semibold text-foreground">' +
+                            "<span>Total</span>" +
+                            '<span id="rd-line-total"></span></div></div>';
+                    }
+
+                    var ctaBlock = "";
+                    if (isGuest) {
+                        ctaBlock =
+                            '<button type="button" id="rd-confirm" class="mt-6 w-full rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-45">' +
+                            "Confirm booking</button>" +
+                            '<p class="mt-3 text-center text-xs text-muted-foreground">You won\'t be charged yet.</p>';
+                    } else if (needsOnboarding) {
+                        ctaBlock =
+                            '<a href="onboarding.html" class="mt-6 flex w-full items-center justify-center rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90">' +
+                            "Complete profile to book</a>" +
+                            '<p class="mt-3 text-center text-xs text-muted-foreground">Finish onboarding to continue.</p>';
+                    } else {
+                        ctaBlock =
+                            '<a href="login.html?next=' +
+                            loginNext +
+                            '" id="rd-login-cta" class="mt-6 flex w-full items-center justify-center rounded-lg bg-primary py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90">' +
+                            "Login to book</a>" +
+                            '<p class="mt-3 text-center text-xs text-muted-foreground">You won\'t be charged yet.</p>';
+                    }
+
+                    el.innerHTML =
+                        '<div class="mb-6">' +
+                        '<a href="' +
+                        esc(backHref) +
+                        '" class="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow-sm transition hover:bg-muted/60">' +
+                        '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>' +
+                        "Go Back</a></div>" +
+                        '<div class="space-y-6">' +
+                        '<div class="relative overflow-hidden rounded-xl border border-border bg-muted">' +
+                        '<img id="room-gallery-main" src="' +
+                        esc(urls[0]) +
+                        '" alt="" class="aspect-[16/10] w-full object-cover" />' +
+                        '<span id="room-gallery-badge" class="absolute bottom-3 right-3 rounded-full bg-black/75 px-2.5 py-1 text-xs font-medium text-white">1 / ' +
+                        urls.length +
+                        " Photos</span></div>" +
+                        '<div class="flex gap-2">' +
+                        thumbsHtml +
+                        "</div></div>" +
+                        '<div class="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">' +
+                        '<div class="min-w-0 space-y-8">' +
+                        '<div class="flex flex-wrap items-center">' +
+                        starsRowHtml(revSummary.average) +
+                        ratingSummaryText(revSummary.average, revSummary.count) +
+                        "</div>" +
+                        '<h1 class="text-3xl font-bold tracking-tight text-foreground">' +
+                        esc(room.name) +
+                        "</h1>" +
+                        '<div class="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">' +
+                        '<span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>' +
+                        esc(String(room.capacity || 2)) +
+                        " guests</span>" +
+                        '<span class="inline-flex items-center gap-1.5"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>' +
+                        roomTypeLabel +
+                        "</span></div>" +
+                        '<p class="text-base text-muted-foreground">' +
+                        esc(room.description || "") +
+                        "</p>" +
+                        '<div><h2 class="text-lg font-semibold text-foreground">Amenities</h2>' +
+                        '<div class="mt-3 flex flex-wrap gap-2">' +
+                        (amenitiesHtml || '<span class="text-sm text-muted-foreground">—</span>') +
+                        "</div></div>" +
+                        '<div><h2 class="text-lg font-semibold text-foreground">Room Policies</h2>' +
+                        '<div class="mt-3 flex gap-3 rounded-lg border border-border bg-card p-4">' +
+                        '<svg class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+                        '<div><p class="text-sm font-medium text-foreground">Check-in / Check-out</p>' +
+                        '<p class="mt-1 text-sm text-muted-foreground">Check-in: ' +
+                        esc(ciLabel) +
+                        "</p>" +
+                        '<p class="text-sm text-muted-foreground">Check-out: ' +
+                        esc(coLabel) +
+                        "</p></div></div></div>" +
+                        '<div><h2 class="text-lg font-semibold text-foreground">Guest Reviews</h2>' +
+                        '<div class="mt-3 space-y-3">' +
+                        reviewsHtml +
+                        "</div></div></div>" +
+                        '<aside class="lg:sticky lg:top-24">' +
+                        '<div class="rounded-xl border border-border bg-card p-6 shadow-sm">' +
+                        '<div class="flex items-start justify-between gap-3">' +
+                        '<div class="min-w-0">' +
+                        '<p class="text-2xl font-bold text-foreground">' +
+                        MarbleUtils.formatCurrency(room.basePriceNight, currency) +
+                        ' <span class="text-base font-normal text-muted-foreground">/ night</span></p>' +
+                        hourlyBlock +
+                        "</div>" +
+                        (revSummary.count > 0
+                            ? '<div class="shrink-0 text-right text-xs text-muted-foreground"><span class="inline-flex items-center gap-0.5 text-amber-400"><svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg></span> ' +
+                              esc(ratingSummaryTextShort(revSummary.average, revSummary.count)) +
+                              "</div>"
+                            : "") +
+                        "</div>" +
+                        '<div class="mt-6 grid grid-cols-2 gap-3">' +
+                        '<div><label for="rd-checkin" class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Check-in</label>' +
+                        '<div class="relative mt-1">' +
+                        '<input id="rd-checkin" type="date" class="w-full rounded-lg border border-border bg-muted/50 py-2.5 pl-3 pr-9 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20" />' +
+                        '<svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+                        "</div></div>" +
+                        '<div><label for="rd-checkout" class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Check-out</label>' +
+                        '<div class="relative mt-1">' +
+                        '<input id="rd-checkout" type="date" class="w-full rounded-lg border border-border bg-muted/50 py-2.5 pl-3 pr-9 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20" />' +
+                        '<svg class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+                        "</div></div></div>" +
+                        '<div class="mt-4"><label for="rd-guests" class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Guests</label>' +
+                        '<input id="rd-guests" type="number" min="1" max="' +
+                        esc(String(room.capacity || 8)) +
+                        '" value="1" class="mt-1 w-full rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20" />' +
+                        "</div>" +
+                        breakdownBlock +
+                        paymentBlock +
+                        ctaBlock +
+                        "</div></aside></div>";
+
+                    var mainImg = document.getElementById("room-gallery-main");
+                    var badge = document.getElementById("room-gallery-badge");
+                    var idx = 0;
+
+                    function setGallery(i) {
+                        idx = i;
+                        if (mainImg) mainImg.src = urls[i];
+                        if (badge) badge.textContent = i + 1 + " / " + urls.length + " Photos";
+                        document.querySelectorAll("[data-room-thumb]").forEach(function (btn, j) {
+                            var on = j === i;
+                            btn.classList.toggle("ring-2", on);
+                            btn.classList.toggle("ring-primary", on);
+                            btn.classList.toggle("ring-offset-2", on);
+                            btn.classList.toggle("ring-offset-background", on);
+                        });
+                    }
+
+                    document.querySelectorAll("[data-room-thumb]").forEach(function (btn) {
+                        btn.addEventListener("click", function () {
+                            var i = Number(btn.getAttribute("data-room-thumb"));
+                            setGallery(i);
+                        });
+                    });
+
+                    function updatePricing() {
+                        var inEl = document.getElementById("rd-checkin");
+                        var outEl = document.getElementById("rd-checkout");
+                        if (!inEl || !outEl) return;
+                        var n = nightsBetween(inEl.value, outEl.value);
+                        var sub = room.basePriceNight * n;
+                        var fee = Math.round(sub * 0.05);
+                        var total = sub + fee;
+                        var ln = document.getElementById("rd-line-nights");
+                        var ls = document.getElementById("rd-line-sub");
+                        var lf = document.getElementById("rd-line-fee");
+                        var lt = document.getElementById("rd-line-total");
+                        if (ln && ls && lf && lt) {
+                            if (n <= 0) {
+                                ln.textContent = "Select valid dates";
+                                ls.textContent = "—";
+                                lf.textContent = "—";
+                                lt.textContent = "—";
+                            } else {
+                                ln.textContent =
+                                    MarbleUtils.formatCurrency(room.basePriceNight, currency) +
+                                    " × " +
+                                    n +
+                                    " night" +
+                                    (n === 1 ? "" : "s");
+                                ls.textContent = MarbleUtils.formatCurrency(sub, currency);
+                                lf.textContent = MarbleUtils.formatCurrency(fee, currency);
+                                lt.textContent = MarbleUtils.formatCurrency(total, currency);
+                            }
+                        }
+                    }
+
+                    var cin = document.getElementById("rd-checkin");
+                    var cout = document.getElementById("rd-checkout");
+                    if (cin) cin.addEventListener("change", updatePricing);
+                    if (cout) cout.addEventListener("change", updatePricing);
+                    updatePricing();
+
+                    function isOnlinePaySelected() {
+                        var payEl = document.querySelector('input[name="rd-pay"]:checked');
+                        return payEl && payEl.value === "online";
+                    }
+
+                    function hasReceiptFile() {
+                        var receipt = document.getElementById("rd-receipt");
+                        return receipt && receipt.files && receipt.files.length > 0;
+                    }
+
+                    function syncConfirmButton() {
+                        var btn = document.getElementById("rd-confirm");
+                        var hint = document.getElementById("rd-receipt-hint");
+                        if (!btn) return;
+                        var needReceipt = isOnlinePaySelected();
+                        var ok = !needReceipt || hasReceiptFile();
+                        btn.disabled = !ok;
+                        btn.title = needReceipt && !hasReceiptFile()
+                            ? "Upload a payment receipt to confirm with online payment"
+                            : "";
+                        if (hint) {
+                            hint.classList.toggle("hidden", !needReceipt || hasReceiptFile());
+                        }
+                    }
+
+                    document.querySelectorAll('input[name="rd-pay"]').forEach(function (r) {
+                        r.addEventListener("change", function () {
+                            var ob = document.getElementById("rd-online-block");
+                            if (!ob) return;
+                            var online =
+                                document.querySelector('input[name="rd-pay"]:checked') &&
+                                document.querySelector('input[name="rd-pay"]:checked').value ===
+                                    "online";
+                            ob.classList.toggle("hidden", !online);
+                            var receipt = document.getElementById("rd-receipt");
+                            if (!online && receipt) receipt.value = "";
+                            syncConfirmButton();
+                        });
+                    });
+
+                    var receiptInput = document.getElementById("rd-receipt");
+                    if (receiptInput) {
+                        receiptInput.addEventListener("change", syncConfirmButton);
+                    }
+                    syncConfirmButton();
+
+                    var confirmBtn = document.getElementById("rd-confirm");
+                    if (confirmBtn) {
+                        confirmBtn.addEventListener("click", function () {
+                            var s = MarbleAuth.getSession();
+                            if (!s || s.role !== "guest") {
+                                window.location.href = "login.html?next=" + loginNext;
+                                return;
+                            }
+                            var inEl = document.getElementById("rd-checkin");
+                            var outEl = document.getElementById("rd-checkout");
+                            var gEl = document.getElementById("rd-guests");
+                            var n = nightsBetween(inEl.value, outEl.value);
+                            if (n <= 0) {
+                                alert("Please choose a check-out date after check-in.");
+                                return;
+                            }
+                            var guests = gEl ? Number(gEl.value) : 1;
+                            if (!Number.isFinite(guests) || guests < 1) {
+                                alert("Enter a valid guest count.");
+                                return;
+                            }
+                            if (guests > (room.capacity || 8)) {
+                                alert(
+                                    "This room allows up to " + (room.capacity || 8) + " guests."
+                                );
+                                return;
+                            }
+                            var sub = room.basePriceNight * n;
+                            var fee = Math.round(sub * 0.05);
+                            var total = sub + fee;
+                            var payEl = document.querySelector('input[name="rd-pay"]:checked');
+                            var payM = payEl && payEl.value === "online" ? "online" : "cash";
+                            if (payM === "online" && !hasReceiptFile()) {
+                                alert("Please upload a payment receipt image or PDF for online payment.");
+                                syncConfirmButton();
+                                return;
+                            }
+                            var bid =
+                                typeof crypto !== "undefined" && crypto.randomUUID
+                                    ? crypto.randomUUID()
+                                    : "b-" + Date.now();
+                            var row = {
+                                id: bid,
+                                userId: s.userId,
+                                roomId: room.id,
+                                checkIn: inEl.value,
+                                checkOut: outEl.value,
+                                bookingType: "nightly",
+                                totalAmount: total,
+                                status: "pending",
+                                paymentStatus: "pending",
+                                paymentMethod: payM,
+                                hourlyHours: null
+                            };
+                            var extra = getExtraBookings();
+                            extra.push(row);
+                            saveExtraBookings(extra);
+                            try {
+                                sessionStorage.setItem(
+                                    "marble_stay_booking_success",
+                                    JSON.stringify({ id: bid, userId: s.userId })
+                                );
+                            } catch (err) {
+                                /* ignore quota / private mode */
+                            }
+                            var enc = encodeURIComponent(bid);
+                            window.location.href =
+                                "booking-success.html?bookingId=" + enc + "#bookingId=" + enc;
+                        });
+                    }
+                });
+            })();
+        </script>
+    </body>
+</html>

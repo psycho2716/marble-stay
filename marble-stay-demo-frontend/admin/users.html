@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Users — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-6xl flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold">Users</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Registered guests and hotel partners.</p>
+      <div class="mt-8 overflow-x-auto rounded-lg border border-border">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-border bg-muted/50">
+            <tr>
+              <th class="px-4 py-3 font-semibold">Name</th>
+              <th class="px-4 py-3 font-semibold">Email</th>
+              <th class="px-4 py-3 font-semibold">Role</th>
+            </tr>
+          </thead>
+          <tbody id="tb"></tbody>
+        </table>
+      </div>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireAdmin();
+        if (!s) return;
+        MarbleChrome.mount({ area: "admin", active: "users" });
+        const reg = MarbleAuth.getRegistry();
+        const byEmail = new Map(reg.map(function (u) {
+          return [u.email.toLowerCase(), u];
+        }));
+        const rows = (data.adminUsersDirectory || []).map(function (d) {
+          const u = byEmail.get(d.email.toLowerCase());
+          return {
+            fullName: (u && u.fullName) || d.fullName,
+            email: d.email,
+            role: d.role
+          };
+        });
+        reg.forEach(function (u) {
+          if (!rows.some(function (r) {
+            return r.email === u.email;
+          }))
+            rows.push({ fullName: u.fullName, email: u.email, role: u.role });
+        });
+        document.getElementById("tb").innerHTML = rows
+          .map(function (r) {
+            return (
+              "<tr class=\"border-b border-border\"><td class=\"px-4 py-3\">" +
+              r.fullName +
+              '</td><td class="px-4 py-3">' +
+              r.email +
+              '</td><td class="px-4 py-3 capitalize">' +
+              r.role +
+              "</td></tr>"
+            );
+          })
+          .join("");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demo accounts — Marble Stay</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background text-foreground" data-base="">
+    <div id="marble-header"></div>
+    <main class="flex flex-1 justify-center px-4 py-12">
+      <div class="w-full max-w-3xl rounded-xl border border-border bg-card p-8 shadow-sm">
+        <h1 class="text-2xl font-bold tracking-tight text-foreground">Predefined demo accounts</h1>
+        <p class="mt-2 text-sm text-muted-foreground">
+          This static preview does not create new users. Sign in with one of the accounts below—the same
+          identities are documented in <code class="rounded bg-muted px-1 text-xs">supabase/seed.sql</code>
+          (hotel and guest password <code class="rounded bg-muted px-1 text-xs">demo_user1234</code>, admin
+          <code class="rounded bg-muted px-1 text-xs">admin1234</code>).
+        </p>
+        <div class="mt-6 overflow-x-auto rounded-lg border border-border">
+          <table class="w-full min-w-[32rem] text-left text-sm">
+            <thead class="border-b border-border bg-muted/50 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th class="px-4 py-3">Role</th>
+                <th class="px-4 py-3">Email</th>
+                <th class="px-4 py-3">Password</th>
+                <th class="px-4 py-3">Notes</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              <tr>
+                <td class="px-4 py-3 font-medium">Hotel (verified)</td>
+                <td class="px-4 py-3 font-mono text-xs">demo-hotel-verified@marblestay.local</td>
+                <td class="px-4 py-3 font-mono text-xs">demo_user1234</td>
+                <td class="px-4 py-3 text-muted-foreground">Searchable hotel owner</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">Hotel (pending)</td>
+                <td class="px-4 py-3 font-mono text-xs">demo-hotel-pending@marblestay.local</td>
+                <td class="px-4 py-3 font-mono text-xs">demo_user1234</td>
+                <td class="px-4 py-3 text-muted-foreground">Awaiting verification</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">Guest</td>
+                <td class="px-4 py-3 font-mono text-xs">demo-guest-onboarding@marblestay.local</td>
+                <td class="px-4 py-3 font-mono text-xs">demo_user1234</td>
+                <td class="px-4 py-3 text-muted-foreground">Onboarding not completed</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">Guest</td>
+                <td class="px-4 py-3 font-mono text-xs">demo-guest-bookings@marblestay.local</td>
+                <td class="px-4 py-3 font-mono text-xs">demo_user1234</td>
+                <td class="px-4 py-3 text-muted-foreground">Onboarding done; bookings flow</td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 font-medium">Admin</td>
+                <td class="px-4 py-3 font-mono text-xs">admin@marblestay.local</td>
+                <td class="px-4 py-3 font-mono text-xs">admin1234</td>
+                <td class="px-4 py-3 text-muted-foreground">Admin console</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-6 text-center">
+          <a
+            href="login.html"
+            class="inline-flex rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+            >Go to login</a
+          >
+        </p>
+      </div>
+    </main>
+
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      (async function () {
+        const data = await MarbleData.loadData();
+        await MarbleAuth.ensureSeededUsers(data);
+        MarbleChrome.mount({ area: "public", active: "accounts", hideFooter: true });
+      })();
+    </script>
+  </body>
+</html>

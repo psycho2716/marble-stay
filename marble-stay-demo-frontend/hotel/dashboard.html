@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotel Dashboard — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-muted" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-10 px-4 py-8">
+      <div id="marble-pending-banner-root"></div>
+
+      <div id="dashboard-gated" class="flex flex-col gap-8">
+        <section class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Today's Bookings</p>
+                <p id="stat-today" class="mt-2 text-3xl font-semibold text-foreground">0</p>
+                <p id="stat-today-sub" class="mt-1 text-xs text-muted-foreground">Pending verification</p>
+              </div>
+              <div class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                <svg class="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Monthly Revenue</p>
+                <p id="stat-revenue" class="mt-2 text-3xl font-semibold text-foreground">₱0</p>
+                <p id="stat-revenue-sub" class="mt-1 text-xs text-muted-foreground">Pending verification</p>
+              </div>
+              <div class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                <svg class="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pending Reviews</p>
+                <p id="stat-reviews" class="mt-2 text-3xl font-semibold text-foreground">0</p>
+                <p id="stat-reviews-sub" class="mt-1 text-xs text-muted-foreground">Pending verification</p>
+              </div>
+              <div class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                <svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-border bg-card shadow-sm">
+          <div class="flex items-center justify-between px-6 py-5">
+            <h2 class="text-lg font-semibold text-foreground">Recent Bookings</h2>
+            <a href="bookings.html" class="text-sm font-medium text-muted-foreground transition hover:text-foreground">View All</a>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="border-t border-border bg-muted/30 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th class="px-6 py-3">Guest</th>
+                  <th class="px-6 py-3">Room Type</th>
+                  <th class="px-6 py-3">Check-in</th>
+                  <th class="px-6 py-3">Status</th>
+                  <th class="px-6 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="recent-bookings-body" class="divide-y divide-border"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script src="../js/hotel-pending-banner.js"></script>
+    <script>
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function fmtPHP(n) {
+        return new Intl.NumberFormat("en-PH", {
+          style: "currency",
+          currency: "PHP",
+          maximumFractionDigits: 0
+        }).format(n);
+      }
+
+      function parseDay(iso) {
+        return new Date(iso + "T12:00:00");
+      }
+
+      function sameCalendarDay(iso, date) {
+        const d = parseDay(iso);
+        return (
+          d.getFullYear() === date.getFullYear() &&
+          d.getMonth() === date.getMonth() &&
+          d.getDate() === date.getDate()
+        );
+      }
+
+      function inCalendarMonth(iso, ref) {
+        const d = parseDay(iso);
+        return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
+      }
+
+      function formatCompactDate(iso) {
+        return parseDay(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      }
+
+      function formatDeltaText(current, previous, suffix) {
+        if (!Number.isFinite(current) || !Number.isFinite(previous)) return "— " + suffix;
+        if (previous === 0) return current === 0 ? "0% " + suffix : "No prior data " + suffix;
+        const delta = Math.round(((current - previous) / Math.abs(previous)) * 100);
+        const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+        return sign + Math.abs(delta) + "% " + suffix;
+      }
+
+      function guestNameForBooking(data, b) {
+        const u = (data.seedUsers || []).find(function (x) {
+          return x.id === b.userId;
+        });
+        return u ? u.fullName : "Guest";
+      }
+
+      function hotelBookingsForHotel(data, hotelId) {
+        const roomIds = new Set(
+          MarbleData.roomsForHotel(data, hotelId).map(function (r) {
+            return r.id;
+          })
+        );
+        return MarbleData.allBookings(data).filter(function (b) {
+          return roomIds.has(b.roomId);
+        });
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireHotel();
+        if (!s) return;
+        MarbleChrome.mount({ area: "hotel", active: "dashboard", isHotelSection: true });
+        const hotel = s.hotelId ? MarbleData.hotelById(data, s.hotelId) : null;
+        MarbleHotelPendingBanner.mount(document.getElementById("marble-pending-banner-root"), hotel, {
+          variant: "dashboard"
+        });
+
+        const gatedNotice = MarbleHotelPendingBanner.shouldShowNotice(hotel);
+
+        const tbody = document.getElementById("recent-bookings-body");
+        if (!hotel) {
+          tbody.innerHTML =
+            '<tr><td class="px-6 py-10 text-center text-sm text-muted-foreground" colspan="5">No hotel linked.</td></tr>';
+          return;
+        }
+
+        const bookings = hotelBookingsForHotel(data, hotel.id);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        if (gatedNotice) {
+          document.getElementById("stat-today").textContent = "0";
+          document.getElementById("stat-today-sub").textContent = "Pending verification";
+          document.getElementById("stat-revenue").textContent = fmtPHP(0);
+          document.getElementById("stat-revenue-sub").textContent = "Pending verification";
+          document.getElementById("stat-reviews").textContent = "0";
+          document.getElementById("stat-reviews-sub").textContent = "Pending verification";
+          tbody.innerHTML =
+            '<tr><td class="px-6 py-10 text-center text-sm text-muted-foreground" colspan="5">No data available until hotel is verified.</td></tr>';
+          return;
+        }
+
+        const todayBookings = bookings.filter(function (b) {
+          return sameCalendarDay(b.checkIn, today);
+        }).length;
+        const yesterdayBookings = bookings.filter(function (b) {
+          return sameCalendarDay(b.checkIn, yesterday);
+        }).length;
+
+        const monthRevenue = bookings
+          .filter(function (b) {
+            return (b.status || "").toLowerCase() === "completed" && inCalendarMonth(b.checkOut, today);
+          })
+          .reduce(function (sum, b) {
+            return sum + Number(b.totalAmount || 0);
+          }, 0);
+
+        const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastMonthRevenue = bookings
+          .filter(function (b) {
+            return (b.status || "").toLowerCase() === "completed" && inCalendarMonth(b.checkOut, lastMonth);
+          })
+          .reduce(function (sum, b) {
+            return sum + Number(b.totalAmount || 0);
+          }, 0);
+
+        const pendingReviews = 0;
+        const lastWeekPendingReviews = 0;
+
+        document.getElementById("stat-today").textContent = String(todayBookings);
+        document.getElementById("stat-today-sub").textContent = formatDeltaText(
+          todayBookings,
+          yesterdayBookings,
+          "from yesterday"
+        );
+        document.getElementById("stat-revenue").textContent = fmtPHP(monthRevenue);
+        document.getElementById("stat-revenue-sub").textContent = formatDeltaText(
+          monthRevenue,
+          lastMonthRevenue,
+          "from last month"
+        );
+        document.getElementById("stat-reviews").textContent = String(pendingReviews);
+        document.getElementById("stat-reviews-sub").textContent = formatDeltaText(
+          pendingReviews,
+          lastWeekPendingReviews,
+          "this week"
+        );
+
+        const slice = bookings.slice(0, 3);
+        if (slice.length === 0) {
+          tbody.innerHTML =
+            '<tr><td class="px-6 py-10 text-center text-sm text-muted-foreground" colspan="5">No bookings yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = slice
+          .map(function (b) {
+            const room = MarbleData.roomById(data, b.roomId);
+            const statusLower = (b.status || "").toLowerCase();
+            const pill =
+              statusLower === "completed"
+                ? "bg-slate-100 text-slate-700"
+                : statusLower === "confirmed"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : statusLower === "pending"
+                    ? "bg-amber-100 text-amber-700"
+                    : "bg-sky-100 text-sky-700";
+            const statusLabel =
+              statusLower === "completed"
+                ? "Completed"
+                : statusLower === "confirmed"
+                  ? "Confirmed"
+                  : statusLower === "pending"
+                    ? "Pending"
+                    : statusLower
+                      ? statusLower.charAt(0).toUpperCase() + statusLower.slice(1)
+                      : "Pending";
+            return (
+              "<tr><td class=\"px-6 py-4 font-medium text-foreground\">" +
+              escapeHtml(guestNameForBooking(data, b)) +
+              '</td><td class="px-6 py-4 text-muted-foreground">' +
+              escapeHtml(room ? room.name : "Room") +
+              '</td><td class="px-6 py-4 text-muted-foreground">' +
+              escapeHtml(formatCompactDate(b.checkIn)) +
+              '</td><td class="px-6 py-4"><span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ' +
+              pill +
+              '">' +
+              escapeHtml(statusLabel) +
+              '</span></td><td class="px-6 py-4 text-right"><a href="bookings.html" class="text-sm font-semibold text-foreground hover:underline">Details</a></td></tr>'
+            );
+          })
+          .join("");
+      });
+    </script>
+  </body>
+</html>

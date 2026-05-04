@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Bookings — Marble Stay</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold tracking-tight text-foreground">My Bookings</h1>
+      <p class="mt-1 text-muted-foreground">Manage your upcoming and past stays.</p>
+      <ul id="list" class="mt-8 space-y-5"></ul>
+    </main>
+    <div id="marble-footer"></div>
+
+    <!-- Rate stay dialog (matches Next.js RateStayDialog layout) -->
+    <div
+      id="rate-stay-overlay"
+      class="fixed inset-0 z-[100] hidden"
+      aria-hidden="true"
+    >
+      <div class="flex min-h-full items-center justify-center p-4 sm:p-6">
+        <button
+          type="button"
+          id="rate-stay-backdrop"
+          class="fixed inset-0 bg-black/50"
+          aria-label="Dismiss"
+        ></button>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rate-stay-title"
+          class="relative z-[101] w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-lg sm:p-8"
+        >
+          <div class="flex items-start justify-between gap-4">
+            <h2 id="rate-stay-title" class="text-lg font-bold text-foreground sm:text-xl">
+              Rate your stay
+            </h2>
+            <button
+              type="button"
+              id="rate-stay-close"
+              class="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              aria-label="Close"
+            >
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <form id="rate-stay-form" class="mt-6">
+            <p id="rate-stay-intro" class="text-center text-sm leading-relaxed text-muted-foreground sm:text-base"></p>
+
+            <div id="rate-stay-stars" class="mt-8 flex justify-center gap-1 sm:gap-2"></div>
+
+            <label for="rate-stay-comment" class="sr-only">Comments</label>
+            <textarea
+              id="rate-stay-comment"
+              rows="5"
+              maxlength="2000"
+              placeholder="Share your thoughts about your stay…"
+              class="mt-8 w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            ></textarea>
+
+            <div class="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between sm:gap-4">
+              <button
+                type="button"
+                id="rate-stay-cancel"
+                class="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-muted/60 sm:w-auto"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="rate-stay-submit"
+                class="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 sm:w-auto"
+              >
+                Submit review
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      (function () {
+        function esc(s) {
+          return String(s ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function bookingRef(b) {
+          return "MST-" + String(b.id).split("-")[0].toUpperCase();
+        }
+
+        function fmtRange(checkIn, checkOut) {
+          try {
+            var a = new Date(checkIn + "T12:00:00");
+            var b = new Date(checkOut + "T12:00:00");
+            var o = { month: "short", day: "numeric", year: "numeric" };
+            return a.toLocaleDateString("en-US", o) + " - " + b.toLocaleDateString("en-US", o);
+          } catch (_) {
+            return esc(checkIn) + " - " + esc(checkOut);
+          }
+        }
+
+        function listStatusBadge(b) {
+          if (b.status === "completed") {
+            return {
+              label: "COMPLETED",
+              cls: "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100"
+            };
+          }
+          if (b.status === "confirmed" && b.paymentStatus === "paid") {
+            return {
+              label: "PAID",
+              cls: "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100"
+            };
+          }
+          return {
+            label: "PENDING",
+            cls: "bg-amber-100 text-amber-950 dark:bg-amber-900/40 dark:text-amber-100"
+          };
+        }
+
+        function hasRoomReview(data, roomId) {
+          return MarbleData.roomReviewsForRoom(data, roomId).length > 0;
+        }
+
+        function checkoutPassed(checkOutIso) {
+          try {
+            return new Date(checkOutIso + "T23:59:59") < new Date();
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function canRateStayDemo(b, room, data) {
+          if (!room) return false;
+          if (hasRoomReview(data, room.id)) return false;
+          if (b.status === "completed") return true;
+          if (
+            b.status === "confirmed" &&
+            b.paymentStatus === "paid" &&
+            checkoutPassed(b.checkOut)
+          ) {
+            return true;
+          }
+          return false;
+        }
+
+        var starPath =
+          "M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z";
+
+        var rateState = {
+          bookingId: "",
+          roomId: "",
+          hotelName: "",
+          rating: 5
+        };
+
+        function renderStars() {
+          var wrap = document.getElementById("rate-stay-stars");
+          if (!wrap) return;
+          var r = rateState.rating;
+          var html = "";
+          for (var n = 1; n <= 5; n++) {
+            var on = n <= r;
+            html +=
+              '<button type="button" class="rate-star-btn rounded-lg p-1.5 transition hover:bg-amber-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 ' +
+              (on ? "text-amber-500" : "text-amber-400") +
+              '" data-star="' +
+              n +
+              '" aria-label="' +
+              n +
+              " star" +
+              (n === 1 ? "" : "s") +
+              '"><svg class="h-9 w-9 sm:h-10 sm:w-10" viewBox="0 0 20 20" aria-hidden="true">' +
+              (on
+                ? '<path fill="currentColor" class="text-amber-400" stroke="currentColor" stroke-width="0.5" d="' +
+                  starPath +
+                  '"/>'
+                : '<path fill="none" stroke="currentColor" stroke-width="1.2" d="' +
+                  starPath +
+                  '"/>') +
+              "</svg></button>";
+          }
+          wrap.innerHTML = html;
+          wrap.querySelectorAll(".rate-star-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              rateState.rating = Number(btn.getAttribute("data-star"));
+              renderStars();
+            });
+          });
+        }
+
+        function openRateDialog(bookingId, roomId, hotelName) {
+          rateState.bookingId = bookingId;
+          rateState.roomId = roomId;
+          rateState.hotelName = hotelName || "this property";
+          rateState.rating = 5;
+          var intro = document.getElementById("rate-stay-intro");
+          if (intro) {
+            intro.innerHTML =
+              "How was your experience at <span class=\"font-semibold text-foreground\">" +
+              esc(rateState.hotelName) +
+              "</span>?";
+          }
+          var ta = document.getElementById("rate-stay-comment");
+          if (ta) ta.value = "";
+          renderStars();
+          var ov = document.getElementById("rate-stay-overlay");
+          if (ov) {
+            ov.classList.remove("hidden");
+            ov.setAttribute("aria-hidden", "false");
+          }
+          document.getElementById("rate-stay-submit").disabled = false;
+          document.getElementById("rate-stay-submit").textContent = "Submit review";
+        }
+
+        function closeRateDialog() {
+          var ov = document.getElementById("rate-stay-overlay");
+          if (ov) {
+            ov.classList.add("hidden");
+            ov.setAttribute("aria-hidden", "true");
+          }
+        }
+
+        function wireRateDialog() {
+          document.getElementById("rate-stay-backdrop").addEventListener("click", closeRateDialog);
+          document.getElementById("rate-stay-close").addEventListener("click", closeRateDialog);
+          document.getElementById("rate-stay-cancel").addEventListener("click", closeRateDialog);
+          document.addEventListener("keydown", function (e) {
+            var ov = document.getElementById("rate-stay-overlay");
+            if (e.key === "Escape" && ov && !ov.classList.contains("hidden")) {
+              closeRateDialog();
+            }
+          });
+          document.getElementById("rate-stay-form").addEventListener("submit", function (e) {
+            e.preventDefault();
+            if (!rateState.roomId || !rateState.bookingId) return;
+            var ta = document.getElementById("rate-stay-comment");
+            var comment = ta ? ta.value.trim() : "";
+            var today = new Date().toISOString().slice(0, 10);
+            MarbleData.appendDemoRoomReview({
+              roomId: rateState.roomId,
+              bookingId: rateState.bookingId,
+              rating: rateState.rating,
+              comment: comment || "",
+              date: today
+            });
+            closeRateDialog();
+            window.location.reload();
+          });
+        }
+
+        MarbleData.loadData().then(async function (data) {
+          await MarbleAuth.ensureSeededUsers(data);
+          var s = MarbleAuth.requireGuest("login.html");
+          if (!s) return;
+          MarbleChrome.mount({ area: "guest", active: "bookings" });
+          wireRateDialog();
+
+          var rows = MarbleData.bookingsForUser(data, s.userId).slice().sort(function (a, b) {
+            return String(b.checkIn).localeCompare(String(a.checkIn));
+          });
+          var ul = document.getElementById("list");
+          if (rows.length === 0) {
+            ul.innerHTML =
+              '<li class="rounded-xl border border-border bg-card p-10 text-center text-muted-foreground">No bookings yet. <a href="hotels.html" class="font-medium text-primary hover:underline">Browse hotels</a></li>';
+            return;
+          }
+
+          ul.innerHTML = rows
+            .map(function (b) {
+              var room = MarbleData.roomById(data, b.roomId);
+              var hotel = room ? MarbleData.hotelById(data, room.hotelId) : null;
+              var thumb =
+                room && room.media && room.media[0]
+                  ? room.media[0]
+                  : "https://loremflickr.com/320/240/hotel,room?lock=88001";
+              var cur = listStatusBadge(b);
+              var ref = bookingRef(b);
+              var reviewed = room && hasRoomReview(data, room.id);
+              var canRate = canRateStayDemo(b, room, data);
+
+              var rateBtn;
+              if (reviewed) {
+                rateBtn =
+                  '<span class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-4 py-2 text-sm font-medium text-foreground">' +
+                  '<svg class="h-4 w-4 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="' +
+                  starPath +
+                  '"/></svg>' +
+                  "Rated</span>";
+              } else if (canRate) {
+                var hName = hotel ? hotel.name : "Hotel";
+                rateBtn =
+                  '<button type="button" class="js-rate-open inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/60" data-booking-id="' +
+                  esc(b.id) +
+                  '" data-room-id="' +
+                  esc(room.id) +
+                  '" data-hotel-name="' +
+                  esc(hName) +
+                  '">' +
+                  '<svg class="h-4 w-4 text-muted-foreground" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' +
+                  starPath +
+                  '"/></svg>' +
+                  "Rate stay</button>";
+              } else {
+                rateBtn =
+                  '<span class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-transparent bg-muted/60 px-4 py-2 text-sm font-medium text-muted-foreground opacity-80" title="You can rate after check-out when your stay is confirmed or completed.">' +
+                  '<svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="' +
+                  starPath +
+                  '"/></svg>' +
+                  "Rate stay</span>";
+              }
+
+              return (
+                '<li class="overflow-hidden rounded-xl border border-border bg-card shadow-sm">' +
+                '<div class="flex flex-col gap-4 p-4 sm:flex-row sm:gap-5 sm:p-5">' +
+                '<img src="' +
+                esc(thumb) +
+                '" alt="" class="h-36 w-full shrink-0 rounded-lg object-cover sm:h-32 sm:w-44" />' +
+                '<div class="min-w-0 flex-1">' +
+                '<div class="flex flex-wrap items-start justify-between gap-2">' +
+                '<span class="inline-flex rounded-md px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ' +
+                cur.cls +
+                '">' +
+                esc(cur.label) +
+                '</span><span class="text-xs text-muted-foreground">Ref: #' +
+                esc(ref) +
+                "</span></div>" +
+                '<h2 class="mt-2 text-lg font-bold text-foreground">' +
+                esc(hotel ? hotel.name : "Hotel") +
+                "</h2>" +
+                '<p class="text-sm text-muted-foreground">' +
+                esc(room ? room.name : "Room") +
+                '</p><p class="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">' +
+                '<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+                '<span>' +
+                esc(fmtRange(b.checkIn, b.checkOut)) +
+                '</span><span class="font-semibold text-foreground">' +
+                MarbleUtils.formatCurrency(b.totalAmount, hotel && hotel.currency) +
+                "</span></p>" +
+                '<div class="mt-4 flex flex-wrap gap-2">' +
+                '<a href="' +
+                esc(MarbleUtils.bookingDetailHref(b.id)) +
+                '" class="inline-flex items-center gap-2 rounded-lg border border-foreground/20 bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/60">' +
+                '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>' +
+                "View details</a>" +
+                rateBtn +
+                "</div></div></div></li>"
+              );
+            })
+            .join("");
+
+          ul.querySelectorAll(".js-rate-open").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              openRateDialog(
+                btn.getAttribute("data-booking-id"),
+                btn.getAttribute("data-room-id"),
+                btn.getAttribute("data-hotel-name")
+              );
+            });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

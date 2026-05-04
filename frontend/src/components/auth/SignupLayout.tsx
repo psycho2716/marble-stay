@@ -2,6 +2,8 @@
 
 import { ReactNode } from "react";
 
+const authBackgroundImage = require("@/public/images/auth-bg.jpg");
+
 export function SignupLayout({ children }: { children: ReactNode }) {
     return (
         <div className="grid min-h-[calc(100vh-3.5rem)] grid-cols-1 lg:grid-cols-3">
@@ -10,8 +12,7 @@ export function SignupLayout({ children }: { children: ReactNode }) {
                 <div
                     className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-60"
                     style={{
-                        backgroundImage:
-                            "url(https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80)"
+                        backgroundImage: `url(${authBackgroundImage.default ? authBackgroundImage.default.src : authBackgroundImage.src || authBackgroundImage})`
                     }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />

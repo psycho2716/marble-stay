@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotel bookings — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-muted" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-8">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 class="text-3xl font-bold tracking-tight text-foreground">Recent Bookings</h1>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Manage and verify guest reservations and payments.
+          </p>
+        </div>
+        <div class="flex w-full max-w-2xl flex-col gap-2 sm:ml-auto sm:w-auto sm:items-end">
+          <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <div class="relative min-w-0 w-full flex-1 sm:max-w-[220px]">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                id="booking-search"
+                type="search"
+                placeholder="Search guest, room, dat..."
+                class="h-10 w-full rounded-lg border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                aria-label="Search bookings"
+              />
+            </div>
+            <button
+              type="button"
+              id="booking-filter-btn"
+              class="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted sm:w-auto"
+            >
+              <svg class="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              Filter
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="marble-pending-banner-root" class="mt-6"></div>
+
+      <div id="bookings-pending-foot" class="hidden mt-4 text-sm text-muted-foreground">
+        Bookings will appear here once your hotel is verified.
+      </div>
+
+      <ul id="list" class="mt-6 space-y-3"></ul>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script src="../js/hotel-pending-banner.js"></script>
+    <script>
+      function renderBookingList(data, hotel, query) {
+        const ul = document.getElementById("list");
+        const roomIds = new Set(
+          MarbleData.roomsForHotel(data, hotel.id).map(function (r) {
+            return r.id;
+          })
+        );
+        let rows = MarbleData.allBookings(data).filter(function (b) {
+          return roomIds.has(b.roomId);
+        });
+        const q = (query || "").trim().toLowerCase();
+        if (q) {
+          rows = rows.filter(function (b) {
+            const room = MarbleData.roomById(data, b.roomId);
+            const hay = [
+              b.checkIn,
+              b.checkOut,
+              b.status,
+              room ? room.name : "",
+              b.id,
+              String(b.totalAmount)
+            ]
+              .join(" ")
+              .toLowerCase();
+            return hay.includes(q);
+          });
+        }
+        ul.innerHTML =
+          rows.length === 0
+            ? '<li class="rounded-xl border border-border bg-card p-6 text-center text-muted-foreground">No bookings yet.</li>'
+            : rows
+                .map(function (b) {
+                  const room = MarbleData.roomById(data, b.roomId);
+                  return (
+                    '<li class="rounded-lg border border-border bg-card p-4"><div class="flex flex-wrap justify-between gap-2"><div><p class="font-semibold">' +
+                    (room ? room.name : "") +
+                    '</p><p class="text-sm text-muted-foreground">' +
+                    b.checkIn +
+                    " → " +
+                    b.checkOut +
+                    '</p></div><span class="rounded-full bg-muted px-3 py-1 text-xs capitalize">' +
+                    b.status +
+                    "</span></div></li>"
+                  );
+                })
+                .join("");
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireHotel();
+        if (!s) return;
+        MarbleChrome.mount({ area: "hotel", active: "bookings", isHotelSection: true });
+        const hotel = MarbleData.hotelById(data, s.hotelId);
+        const ul = document.getElementById("list");
+        const foot = document.getElementById("bookings-pending-foot");
+        const search = document.getElementById("booking-search");
+        const filterBtn = document.getElementById("booking-filter-btn");
+
+        if (!hotel) {
+          ul.innerHTML = "<li>No hotel.</li>";
+          return;
+        }
+
+        MarbleHotelPendingBanner.mount(document.getElementById("marble-pending-banner-root"), hotel, {
+          variant: "amber",
+          footnote: false
+        });
+
+        if (MarbleHotelPendingBanner.shouldShowNotice(hotel)) {
+          foot.classList.remove("hidden");
+          ul.innerHTML = "";
+          ul.classList.add("hidden");
+          return;
+        }
+
+        foot.classList.add("hidden");
+        ul.classList.remove("hidden");
+
+        function refresh() {
+          renderBookingList(data, hotel, search.value);
+        }
+        search.addEventListener("input", refresh);
+        filterBtn.addEventListener("click", function () {
+          /* static demo: filter panel not implemented */
+        });
+        refresh();
+      });
+    </script>
+  </body>
+</html>

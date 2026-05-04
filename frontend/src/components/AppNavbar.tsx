@@ -20,7 +20,26 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { NotificationBell } from "@/components/NotificationBell";
 
-export type NavbarRole = "public" | "guest" | "hotel";
+export type NavbarRole = "public" | "guest" | "hotel" | "admin";
+
+function tryDecodeJwtRole(token: string | null): "guest" | "hotel" | "admin" | null {
+    if (!token) return null;
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    try {
+        const payloadBase64Url = parts[1];
+        const payloadBase64 = payloadBase64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const pad = payloadBase64.length % 4;
+        const padded = pad ? payloadBase64 + "=".repeat(4 - pad) : payloadBase64;
+        const json = atob(padded);
+        const payload = JSON.parse(json) as { role?: unknown };
+        const r = payload.role;
+        if (r === "guest" || r === "hotel" || r === "admin") return r;
+        return null;
+    } catch {
+        return null;
+    }
+}
 
 function tryDecodeJwtEmail(token: string | null): string | null {
     if (!token) return null;
@@ -54,6 +73,13 @@ const HOTEL_LINKS = [
     { href: "/hotel/dashboard", label: "Dashboard" },
     { href: "/hotel/rooms", label: "Rooms" },
     { href: "/hotel/bookings", label: "Bookings" }
+] as const;
+
+/** Same destinations as AdminNavbar — shown on public routes when the session is admin. */
+const ADMIN_NAV_LINKS = [
+    { href: "/admin/verification", label: "Verification" },
+    { href: "/admin/users", label: "Users" },
+    { href: "/admin/hotels", label: "Hotels" }
 ] as const;
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -179,17 +205,30 @@ export function AppNavbar() {
 
         setEmail(storedEmail ?? tryDecodeJwtEmail(token) ?? tryDecodeJwtEmail(supabaseAccessToken));
 
-        if (pathname?.startsWith("/admin")) {
-            setRole("public");
-            return;
-        }
         if (!token) {
             setRole("public");
             return;
         }
-        // Only show hotel navbar when on /hotel/* and the user is actually a hotel (role from login).
-        if (pathname?.startsWith("/hotel") && userRole === "hotel") {
+
+        const jwtRole = tryDecodeJwtRole(token);
+        const stored =
+            userRole === "guest" || userRole === "hotel" || userRole === "admin" ? userRole : null;
+        const resolved = jwtRole ?? stored;
+
+        if (resolved === "admin") {
+            setRole("admin");
+            return;
+        }
+        if (pathname?.startsWith("/hotel") && resolved === "hotel") {
             setRole("hotel");
+            return;
+        }
+        if (resolved === "guest") {
+            setRole("guest");
+            return;
+        }
+        if (resolved === "hotel") {
+            setRole("guest");
             return;
         }
         setRole("guest");
@@ -197,6 +236,10 @@ export function AppNavbar() {
 
     useEffect(() => {
         if (role === "loading" || role === "public") {
+            setNavbarAvatarUrl(null);
+            return;
+        }
+        if (role === "admin") {
             setNavbarAvatarUrl(null);
             return;
         }
@@ -214,11 +257,12 @@ export function AppNavbar() {
     function handleLogout() {
         if (typeof window === "undefined") return;
         const wasHotel = role === "hotel";
+        const wasAdmin = role === "admin";
         clearClientAuth();
         setNavbarAvatarUrl(null);
         setEmail(null);
         setRole("public");
-        router.push(wasHotel ? "/login" : "/");
+        router.push(wasHotel || wasAdmin ? "/login" : "/");
         router.refresh();
     }
 
@@ -243,6 +287,72 @@ export function AppNavbar() {
         );
     }
 
+    if (role === "admin") {
+        return (
+            <header className="sticky top-0 z-50 border-b border-border bg-white/90 backdrop-blur-sm">
+                <div className="mx-auto flex h-14 max-w-6xl items-center px-4">
+                    <div className="flex flex-1 items-center">
+                        <MarbleStayLogo href="/admin/verification" role="admin" />
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <nav className="flex items-center gap-8" aria-label="Admin">
+                            {ADMIN_NAV_LINKS.map(({ href, label }) => (
+                                <NavLink
+                                    key={href}
+                                    href={href}
+                                    label={label}
+                                    isActive={
+                                        pathname === href || pathname?.startsWith(`${href}/`)
+                                    }
+                                />
+                            ))}
+                        </nav>
+
+                        <div className="w-[1px] h-7 bg-border" />
+
+                        <div className="flex flex-1 items-center justify-end gap-2">
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-2 rounded-full px-2 py-1.5 text-sm font-medium text-foreground transition hover:bg-muted"
+                                    >
+                                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                                            <User className="h-4 w-4" />
+                                        </span>
+                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                    </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-60">
+                                    <DropdownMenuLabel className="px-3 py-2">
+                                        <span className="block text-[11px] font-semibold tracking-wide text-muted-foreground">
+                                            SIGNED IN AS
+                                        </span>
+                                        <span className="mt-1 block truncate text-sm font-semibold text-foreground">
+                                            {emailText}
+                                        </span>
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        className="px-3 py-2 text-destructive focus:text-destructive"
+                                        onSelect={(e) => {
+                                            e.preventDefault();
+                                            handleLogout();
+                                        }}
+                                    >
+                                        <LogOut className="h-4 w-4" />
+                                        Logout
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+                </div>
+            </header>
+        );
+    }
+
     if (role === "hotel") {
         return (
             <header className="sticky top-0 z-50 border-b border-border bg-white/90 backdrop-blur-sm">
@@ -258,7 +368,7 @@ export function AppNavbar() {
                                     key={href}
                                     href={href}
                                     label={label}
-                                    isActive={pathname === href || pathname?.startsWith(href)}
+                                    isActive={pathname === href || pathname?.startsWith(`${href}/`)}
                                 />
                             ))}
                         </nav>

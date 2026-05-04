@@ -254,33 +254,6 @@ export default function HotelDashboardPage() {
                                                 : "Your hotel must be verified by an administrator before you can manage your accommodations and rooms, and before your hotel appears in listings for guests."}
                                     </p>
 
-                                    {isPendingSubmitted ? (
-                                        <div className="mt-4 flex flex-wrap gap-3">
-                                            <Link
-                                                href="/hotel/profile"
-                                                className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90"
-                                            >
-                                                View Status
-                                            </Link>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const el =
-                                                        document.getElementById(
-                                                            "verification-upload"
-                                                        );
-                                                    el?.scrollIntoView({
-                                                        behavior: "smooth",
-                                                        block: "start"
-                                                    });
-                                                }}
-                                                className="inline-flex items-center justify-center rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
-                                            >
-                                                Upload Documents
-                                            </button>
-                                        </div>
-                                    ) : null}
-
                                     {showVerificationForm && (
                                         <div
                                             id="verification-upload"

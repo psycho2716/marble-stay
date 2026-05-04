@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>For you — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-6xl flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold">For you</h1>
+      <p class="mt-1 text-muted-foreground">Personalized picks based on your preferences and activity.</p>
+      <ul id="recs" class="mt-8 grid gap-6 sm:grid-cols-2"></ul>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireGuest("login.html");
+        if (!s) return;
+        MarbleChrome.mount({ area: "guest", active: "recommendations" });
+        const recs = data.recommendations || [];
+        document.getElementById("recs").innerHTML =
+          recs.length === 0
+            ? '<li class="col-span-full text-muted-foreground">No recommendations yet.</li>'
+            : recs
+                .map(function (r) {
+                  const h = MarbleData.hotelById(data, r.hotelId);
+                  if (!h) return "";
+                  const img = h.profileImage || (h.images && h.images[0]) || "";
+                  return (
+                    '<li class="overflow-hidden rounded-xl border border-border bg-card"><a href="' +
+                    MarbleUtils.hotelDetailHref(h.id) +
+                    '" class="block">' +
+                    (img
+                      ? '<img src="' + img + '" alt="" class="aspect-[16/9] w-full object-cover" />'
+                      : "") +
+                    '<div class="p-4"><h2 class="font-semibold">' +
+                    h.name +
+                    '</h2><p class="mt-1 text-sm text-muted-foreground">' +
+                    (r.reason || "") +
+                    '</p><p class="mt-2 text-xs text-muted-foreground">Match score: ' +
+                    Math.round((r.score || 0) * 100) +
+                    "%</p></div></a></li>"
+                  );
+                })
+                .join("");
+      });
+    </script>
+  </body>
+</html>

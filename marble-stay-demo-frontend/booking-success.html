@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Booking confirmed — Marble Stay</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="flex flex-1 flex-col items-center justify-center px-4 py-16">
+      <div id="success-panel" class="mx-auto w-full max-w-md text-center"></div>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      function esc(s) {
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function resolveBookingIdFromPage() {
+        var fromQuery = MarbleUtils.getQueryParam("bookingId");
+        if (fromQuery) {
+          try {
+            return decodeURIComponent(fromQuery).trim();
+          } catch (_) {
+            return String(fromQuery).trim();
+          }
+        }
+        var raw = (window.location.hash || "").replace(/^#/, "").trim();
+        if (raw.toLowerCase().startsWith("bookingid=")) {
+          var part = raw.slice(10).split("&")[0];
+          try {
+            return decodeURIComponent(part).trim();
+          } catch (_) {
+            return part.trim();
+          }
+        }
+        return "";
+      }
+
+      function readPendingSuccess() {
+        try {
+          var raw = sessionStorage.getItem("marble_stay_booking_success");
+          if (!raw) return null;
+          sessionStorage.removeItem("marble_stay_booking_success");
+          return JSON.parse(raw);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function findBookingForUser(data, bookingId, userId) {
+        if (!bookingId) return null;
+        var uid = String(userId);
+        var fromData = MarbleData.bookingById(data, bookingId);
+        if (fromData && String(fromData.userId) === uid) return fromData;
+        var extras = MarbleData.getExtraBookings();
+        var row = extras.find(function (x) {
+          return x && String(x.id) === String(bookingId);
+        });
+        if (row && String(row.userId) === uid) return row;
+        return null;
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireGuest("login.html");
+        if (!s) return;
+        MarbleChrome.mount({ area: "guest", active: "bookings" });
+        const panel = document.getElementById("success-panel");
+        var id = resolveBookingIdFromPage();
+        var pending = readPendingSuccess();
+        if (pending && String(pending.userId) !== String(s.userId)) {
+          pending = null;
+        }
+        if (!id && pending && pending.id) {
+          id = String(pending.id).trim();
+        }
+        if (pending && pending.id && id && String(pending.id) !== String(id)) {
+          id = String(pending.id).trim();
+        }
+        var b = id ? findBookingForUser(data, id, s.userId) : null;
+        var refId = b && b.id ? b.id : null;
+        if (
+          !refId &&
+          pending &&
+          String(pending.userId) === String(s.userId) &&
+          pending.id
+        ) {
+          refId = String(pending.id).trim();
+        }
+        if (!refId) {
+          panel.innerHTML =
+            '<div class="rounded-xl border border-border bg-card p-8 shadow-sm">' +
+            '<h1 class="text-2xl font-bold text-foreground">Something went wrong</h1>' +
+            '<p class="mt-2 text-sm text-muted-foreground">We couldn\'t find that booking. Return to your bookings list and try again.</p>' +
+            '<a href="bookings.html" class="mt-6 inline-flex rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90">View my bookings</a>' +
+            "</div>";
+          return;
+        }
+
+        panel.innerHTML =
+          '<div class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500 shadow-sm">' +
+          '<svg class="h-9 w-9 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">' +
+          '<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg></div>' +
+          '<h1 class="mt-6 text-3xl font-bold tracking-tight text-foreground">Booking confirmed</h1>' +
+          '<p class="mt-3 text-base text-muted-foreground">' +
+          "Your reservation has been submitted successfully. The hotel will confirm your booking shortly." +
+          "</p>" +
+          '<p class="mt-6 text-sm text-muted-foreground">Reference: <span class="font-mono text-foreground">' +
+          esc(refId) +
+          "</span></p>" +
+          '<div class="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">' +
+          '<a href="bookings.html" class="inline-flex flex-1 items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 sm:flex-initial">' +
+          "View my bookings</a>" +
+          '<a href="hotels.html" class="inline-flex flex-1 items-center justify-center rounded-lg border border-border bg-background px-6 py-3 text-sm font-semibold text-foreground transition hover:bg-muted/60 sm:flex-initial">' +
+          "Browse more rooms</a></div>";
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotels — Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-6xl flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold">All hotels</h1>
+      <ul id="list" class="mt-8 space-y-3"></ul>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/utils.js"></script>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireAdmin();
+        if (!s) return;
+        MarbleChrome.mount({ area: "admin", active: "hotels" });
+        document.getElementById("list").innerHTML = data.hotels
+          .map(function (h) {
+            const st = MarbleData.verificationStatusOf(h);
+            return (
+              '<li><a href="' +
+              MarbleUtils.hotelDetailHref(h.id) +
+              '" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-card p-4 hover:border-primary/30">' +
+              "<span class=\"font-medium\">" +
+              h.name +
+              '</span><span class="text-xs capitalize text-muted-foreground">' +
+              st +
+              "</span></a></li>"
+            );
+          })
+          .join("");
+      });
+    </script>
+  </body>
+</html>

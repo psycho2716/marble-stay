@@ -103,7 +103,7 @@ function statusPill(
     return (
         <span
             className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide",
+                "inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide",
                 map[variant]
             )}
         >
@@ -130,6 +130,32 @@ function paymentStatusVariant(ps: string): "neutral" | "success" | "warning" | "
     if (s === "cancelled") return "danger";
     if (s === "refunded") return "neutral";
     return "neutral";
+}
+
+/** Pills in trip header — matches guest “view booking” reference copy. */
+function guestBookingStatusPillLabel(status: string): string {
+    const s = (status ?? "").toLowerCase();
+    if (s === "pending") return "BOOKING PENDING";
+    if (s === "confirmed") return "BOOKING CONFIRMED";
+    if (s === "completed") return "BOOKING: COMPLETED";
+    if (s === "cancelled") return "BOOKING CANCELLED";
+    return `BOOKING ${(status || "—").toUpperCase()}`;
+}
+
+function guestPaymentStatusPillLabel(paymentStatus: string): string {
+    const s = (paymentStatus ?? "").toLowerCase();
+    if (s === "paid") return "PAYMENT PAID";
+    if (s === "pending") return "PAYMENT PENDING";
+    if (s === "cancelled") return "PAYMENT CANCELLED";
+    return `PAYMENT ${(paymentStatus || "—").toUpperCase()}`;
+}
+
+function guestPaymentMethodCaption(method: string | null | undefined): string | null {
+    if (!method?.trim()) return null;
+    const x = method.toLowerCase();
+    if (x === "cash") return "Cash Payment";
+    if (x === "online" || x === "gcash") return "Online Payment";
+    return `${method} payment`;
 }
 
 /** Guest may POST a new receipt when online, confirmed, pending payment, and not awaiting first verification. */
@@ -358,12 +384,14 @@ export default function GuestBookingDetailPage() {
         (booking.payment_status ?? "").toLowerCase() === "pending" &&
         (booking.status ?? "").toLowerCase() === "confirmed";
 
+    const paymentCaption = guestPaymentMethodCaption(booking.payment_method);
+
     return (
-        <div className="min-h-screen bg-background pb-16 pt-6 sm:pt-10">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="min-h-screen bg-muted/30 pb-16 pt-6 sm:pt-10">
+            <div className="mx-auto max-w-4xl px-4 sm:px-6">
                 <Link
                     href="/bookings"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-foreground transition hover:text-primary"
                 >
                     <ArrowLeft className="h-4 w-4" />
                     My bookings
@@ -373,17 +401,17 @@ export default function GuestBookingDetailPage() {
                     className={cn(
                         "mt-6 w-full min-w-0",
                         showPaymentSection
-                            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:items-start xl:grid-cols-[minmax(0,1fr)_420px]"
-                            : "flex flex-col gap-8"
+                            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:items-start"
+                            : "flex flex-col gap-6"
                     )}
                 >
-                    {/* Left (or full width): trip details + rate (single card) */}
+                    {/* Trip details + room + dates + total + rate (single card) */}
                     <article className="w-full min-w-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-                        <div className="border-b border-border bg-muted/40 px-5 py-4 sm:px-8 sm:py-6">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="border-b border-border bg-card px-5 py-5 sm:px-8 sm:py-6">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
                                 <div className="min-w-0 space-y-1">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                        Trip details
+                                    <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                                        Trip Details
                                     </p>
                                     <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                                         {hotelName}
@@ -398,42 +426,32 @@ export default function GuestBookingDetailPage() {
                                         </p>
                                     ) : null}
                                 </div>
-                                <div className="flex flex-wrap items-end justify-end gap-3 sm:gap-4">
-                                    <div className="flex flex-col items-end gap-1">
-                                        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                            Booking
-                                        </span>
-                                        {statusPill(
-                                            booking.status,
-                                            bookingStatusVariant(booking.status)
-                                        )}
-                                    </div>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                    {statusPill(
+                                        guestBookingStatusPillLabel(booking.status),
+                                        bookingStatusVariant(booking.status)
+                                    )}
                                     {booking.payment_status ? (
-                                        <div className="flex flex-col items-end gap-1">
-                                            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                                Payment
-                                            </span>
-                                            {statusPill(
-                                                booking.payment_status,
-                                                paymentStatusVariant(booking.payment_status)
-                                            )}
-                                        </div>
+                                        statusPill(
+                                            guestPaymentStatusPillLabel(booking.payment_status),
+                                            paymentStatusVariant(booking.payment_status)
+                                        )
                                     ) : null}
                                 </div>
                             </div>
-                            <p className="mt-3 text-sm font-medium text-foreground">
-                                {roomName}
-                                <span className="text-muted-foreground">
+                            <p className="mt-3 text-sm text-muted-foreground">
+                                <span className="font-medium text-foreground">{roomName}</span>
+                                <span>
                                     {" "}
-                                    · Ref #{booking.id.slice(0, 8)}
+                                    - Ref #{booking.id.split("-")[0]}
                                 </span>
                             </p>
                         </div>
 
                         {showRoomDetailsSection ? (
                             <div className="border-b border-border bg-card px-5 py-5 sm:px-8 sm:py-6">
-                                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    Your room
+                                <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                                    Your Room
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
                                     Details and photos for{" "}
@@ -443,7 +461,7 @@ export default function GuestBookingDetailPage() {
                                 {roomMedia.length > 0 ? (
                                     <div
                                         className={cn(
-                                            "mt-4 flex gap-3 overflow-x-auto pb-1",
+                                            "mt-4 flex gap-2 overflow-x-auto pb-2",
                                             "[scrollbar-width:thin]",
                                             "[scrollbar-color:hsl(var(--muted-foreground)/0.35)_transparent]"
                                         )}
@@ -454,7 +472,7 @@ export default function GuestBookingDetailPage() {
                                                     key={`${item.url}-${idx}`}
                                                     src={item.url}
                                                     controls
-                                                    className="h-44 w-full max-w-xs shrink-0 rounded-xl border border-border bg-black object-cover sm:h-52 sm:max-w-sm"
+                                                    className="h-28 w-40 shrink-0 rounded-lg border border-border bg-black object-cover sm:h-32 sm:w-44"
                                                     preload="metadata"
                                                 />
                                             ) : (
@@ -463,7 +481,7 @@ export default function GuestBookingDetailPage() {
                                                     key={`${item.url}-${idx}`}
                                                     src={item.url}
                                                     alt=""
-                                                    className="h-44 w-full max-w-xs shrink-0 rounded-xl border border-border object-cover sm:h-52 sm:max-w-sm"
+                                                    className="h-28 w-40 shrink-0 rounded-lg border border-border object-cover sm:h-32 sm:w-44"
                                                 />
                                             )
                                         )}
@@ -472,15 +490,15 @@ export default function GuestBookingDetailPage() {
 
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     {roomDetail?.room_type ? (
-                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground">
-                                            <BedDouble className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                                            <BedDouble className="h-3.5 w-3.5" aria-hidden />
                                             {roomDetail.room_type}
                                         </span>
                                     ) : null}
                                     {typeof roomDetail?.capacity === "number" &&
                                     roomDetail.capacity >= 1 ? (
-                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground">
-                                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                                            <Users className="h-3.5 w-3.5" aria-hidden />
                                             Up to {roomDetail.capacity} guest
                                             {roomDetail.capacity === 1 ? "" : "s"}
                                         </span>
@@ -510,7 +528,7 @@ export default function GuestBookingDetailPage() {
 
                                 {roomAmenities.length > 0 ? (
                                     <div className="mt-4">
-                                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                        <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
                                             Amenities
                                         </p>
                                         <ul className="mt-2 flex flex-wrap gap-2">
@@ -531,9 +549,10 @@ export default function GuestBookingDetailPage() {
                         <div className="grid gap-px bg-border sm:grid-cols-2">
                             {isHourlyStay ? (
                                 <div className="flex gap-3 bg-card p-5 sm:col-span-2 sm:p-6">
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                        <Clock className="h-5 w-5" aria-hidden />
-                                    </div>
+                                    <Clock
+                                        className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                                        aria-hidden
+                                    />
                                     <div>
                                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                             Your stay (hourly)
@@ -546,9 +565,10 @@ export default function GuestBookingDetailPage() {
                             ) : (
                                 <>
                                     <div className="flex gap-3 bg-card p-5 sm:p-6">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                            <Calendar className="h-5 w-5" aria-hidden />
-                                        </div>
+                                        <Calendar
+                                            className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                                            aria-hidden
+                                        />
                                         <div>
                                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                                 Check-in
@@ -559,9 +579,10 @@ export default function GuestBookingDetailPage() {
                                         </div>
                                     </div>
                                     <div className="flex gap-3 bg-card p-5 sm:p-6">
-                                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                            <Clock className="h-5 w-5" aria-hidden />
-                                        </div>
+                                        <Clock
+                                            className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                                            aria-hidden
+                                        />
                                         <div>
                                             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                                 Check-out
@@ -574,9 +595,10 @@ export default function GuestBookingDetailPage() {
                                 </>
                             )}
                             <div className="flex gap-3 bg-card p-5 sm:p-6 sm:col-span-2">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                    <CreditCard className="h-5 w-5" aria-hidden />
-                                </div>
+                                <CreditCard
+                                    className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
+                                    aria-hidden
+                                />
                                 <div className="flex flex-1 flex-wrap items-end justify-between gap-3">
                                     <div>
                                         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -585,15 +607,15 @@ export default function GuestBookingDetailPage() {
                                         <p className="mt-1 text-xl font-bold text-foreground">
                                             ₱{formatNumberCompact(booking.total_amount)}
                                         </p>
-                                        {booking.payment_method ? (
-                                            <p className="mt-1 text-sm capitalize text-muted-foreground">
-                                                {booking.payment_method} payment
+                                        {paymentCaption ? (
+                                            <p className="mt-1 text-sm text-muted-foreground">
+                                                {paymentCaption}
                                             </p>
                                         ) : null}
                                     </div>
                                     {paid ? (
-                                        <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700">
-                                            <CheckCircle2 className="h-4 w-4" />
+                                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                                            <CheckCircle2 className="h-5 w-5" aria-hidden />
                                             Payment received
                                         </span>
                                     ) : null}
@@ -609,7 +631,7 @@ export default function GuestBookingDetailPage() {
                         >
                             <div className="flex items-center gap-2">
                                 <Star className="h-5 w-5 text-amber-500" aria-hidden />
-                                <h2 className="text-lg font-bold text-foreground">
+                                <h2 className="text-base font-semibold text-foreground">
                                     Rate your stay
                                 </h2>
                             </div>
@@ -692,9 +714,11 @@ export default function GuestBookingDetailPage() {
                                     </Button>
                                 </form>
                             ) : (
-                                <p className="mt-4 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                                <p className="mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                                     {booking.review_block_reason ??
-                                        "Reviews open after check-out when your booking is confirmed."}
+                                        ((booking.status ?? "").toLowerCase() === "pending"
+                                            ? "You can rate this stay after your booking is confirmed."
+                                            : "You can rate this stay after your check-out date.")}
                                 </p>
                             )}
                         </div>
@@ -827,8 +851,11 @@ export default function GuestBookingDetailPage() {
                         )}
                     >
                         <div className="flex items-center gap-2">
-                            <MessageSquare className="h-5 w-5 text-primary" aria-hidden />
-                            <h2 className="text-lg font-bold text-foreground">Messages</h2>
+                            <MessageSquare
+                                className="h-5 w-5 text-muted-foreground"
+                                aria-hidden
+                            />
+                            <h2 className="text-base font-semibold text-foreground">Messages</h2>
                         </div>
                         <p className="mt-1 text-sm text-muted-foreground">
                             Chat with{" "}

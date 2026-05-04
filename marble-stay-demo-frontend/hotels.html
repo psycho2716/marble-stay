@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hotels — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="flex-1 bg-background">
+      <div class="mx-auto max-w-6xl px-4 py-8">
+        <header class="mb-8">
+          <h1 id="hotels-heading" class="text-3xl font-bold tracking-tight text-foreground">All Available Hotels</h1>
+          <p class="mt-1 text-muted-foreground">Showing the best-rated stays for your upcoming trip.</p>
+        </header>
+        <div class="flex flex-col gap-8 lg:flex-row">
+          <aside class="w-full shrink-0 lg:w-64">
+            <div class="rounded-xl border border-border bg-card p-4">
+              <h2 class="text-sm font-semibold">Filters</h2>
+              <form id="filter-form" class="mt-4 space-y-3">
+                <div>
+                  <label class="text-xs text-muted-foreground">Min price</label>
+                  <input name="minPrice" type="number" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label class="text-xs text-muted-foreground">Max price</label>
+                  <input name="maxPrice" type="number" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label class="text-xs text-muted-foreground">Min rating</label>
+                  <input name="rating" type="number" step="0.1" min="0" max="5" class="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                </div>
+                <button type="submit" class="w-full rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground">Apply</button>
+                <button type="button" id="filter-clear" class="w-full rounded-lg border border-border py-2 text-sm">Clear</button>
+              </form>
+            </div>
+          </aside>
+          <div class="min-w-0 flex-1 space-y-6">
+            <ul id="hotel-list" class="space-y-6"></ul>
+          </div>
+        </div>
+      </div>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      function parseQS() {
+        return new URLSearchParams(window.location.search);
+      }
+
+      function applyFilters(data, qs) {
+        let list = data.hotels.filter(function (h) {
+          return MarbleData.verificationStatusOf(h) === "verified";
+        });
+        const loc = (qs.get("location") || "").toLowerCase();
+        if (loc) {
+          list = list.filter(function (h) {
+            return (h.address || "").toLowerCase().includes(loc) || (h.name || "").toLowerCase().includes(loc);
+          });
+        }
+        const minP = qs.get("minPrice");
+        const maxP = qs.get("maxPrice");
+        const minR = qs.get("rating");
+        if (minP) {
+          const n = Number(minP);
+          if (Number.isFinite(n))
+            list = list.filter(function (h) {
+              return Number(h.minPrice || 0) >= n;
+            });
+        }
+        if (maxP) {
+          const n = Number(maxP);
+          if (Number.isFinite(n))
+            list = list.filter(function (h) {
+              return Number(h.minPrice || 0) <= n;
+            });
+        }
+        if (minR) {
+          const n = Number(minR);
+          if (Number.isFinite(n))
+            list = list.filter(function (h) {
+              const s = MarbleData.hotelRatingSummary(data, h.id);
+              return (s.average || 0) >= n;
+            });
+        }
+        return list;
+      }
+
+      function renderList(data, qs) {
+        const hotels = applyFilters(data, qs);
+        const ul = document.getElementById("hotel-list");
+        if (hotels.length === 0) {
+          ul.innerHTML =
+            '<li class="rounded-xl border border-border bg-card p-12 text-center text-muted-foreground">No hotels match your filters.</li>';
+          return;
+        }
+        ul.innerHTML = hotels
+          .map(function (h) {
+            const img = h.profileImage || (h.images && h.images[0]) || "";
+            const desc = h.description || "A comfortable stay with thoughtfully designed rooms and great service.";
+            const hs = MarbleData.hotelRatingSummary(data, h.id);
+            const avgDisplay =
+              hs.average != null ? hs.average.toFixed(1) : "0";
+            const price =
+              h.minPrice != null
+                ? '<div class="shrink-0"><p class="text-2xl font-bold text-foreground">' +
+                  MarbleUtils.formatCurrency(h.minPrice, h.currency) +
+                  '</p><p class="-mt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">per night</p></div>'
+                : "<div/>";
+            return (
+              '<li><article class="overflow-hidden rounded border border-border bg-card"><div class="flex flex-col md:flex-row md:items-stretch">' +
+              '<div class="h-44 w-full shrink-0 bg-muted md:h-auto md:w-[320px]">' +
+              (img
+                ? '<img src="' + img + '" alt="" class="h-full w-full object-cover" />'
+                : '<div class="flex h-full items-center justify-center text-muted-foreground">No image</div>') +
+              '</div><div class="flex min-w-0 flex-1 flex-col justify-between gap-4 p-6"><div><div class="flex items-start justify-between gap-4"><h2 class="truncate text-base font-semibold md:text-lg">' +
+              h.name +
+              '</h2><div class="inline-flex shrink-0 items-center gap-1 text-end text-sm font-semibold text-amber-500"><svg class="h-4 w-4 fill-amber-400 text-amber-400" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span>' +
+              avgDisplay +
+              "</span></div></div>" +
+              (h.address ? '<p class="mt-1 text-sm text-muted-foreground">' + h.address + "</p>" : "") +
+              '<hr class="my-2 border-border" /><p class="line-clamp-2 text-sm text-muted-foreground">' +
+              desc +
+              '</p></div><div class="flex items-end justify-between gap-6">' +
+              price +
+              '<a href="' +
+              MarbleUtils.hotelDetailHref(h.id) +
+              '" class="inline-flex h-10 items-center justify-center rounded-md bg-foreground px-7 text-sm font-semibold text-background hover:opacity-90">View Details</a></div></div></div></article></li>'
+            );
+          })
+          .join("");
+      }
+
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        MarbleChrome.mount({ area: "auto", active: window.location.pathname, isHotelSection: false });
+        const qs = parseQS();
+        const loc = qs.get("location");
+        if (loc) document.getElementById("hotels-heading").textContent = "Hotels in " + loc;
+        if (qs.get("minPrice")) document.querySelector('[name="minPrice"]').value = qs.get("minPrice");
+        if (qs.get("maxPrice")) document.querySelector('[name="maxPrice"]').value = qs.get("maxPrice");
+        if (qs.get("rating")) document.querySelector('[name="rating"]').value = qs.get("rating");
+        renderList(data, qs);
+        document.getElementById("filter-form").addEventListener("submit", function (e) {
+          e.preventDefault();
+          const fd = new FormData(e.target);
+          const p = new URLSearchParams(window.location.search);
+          ["minPrice", "maxPrice", "rating"].forEach(function (k) {
+            const v = fd.get(k);
+            if (v) p.set(k, v);
+            else p.delete(k);
+          });
+          history.replaceState(null, "", "hotels.html?" + p.toString());
+          renderList(data, p);
+        });
+        document.getElementById("filter-clear").addEventListener("click", function () {
+          document.getElementById("filter-form").reset();
+          history.replaceState(null, "", "hotels.html");
+          renderList(data, new URLSearchParams());
+        });
+      });
+    </script>
+  </body>
+</html>

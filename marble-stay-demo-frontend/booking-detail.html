@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Booking — Marble Stay</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-muted/30" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-8" id="main"></main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      (function () {
+        var CHAT_PREFIX = "marble_stay_booking_chat_";
+        var DEMO_CHAT_BOOKING = "e0000001-0000-4000-8000-000000000002";
+
+        function esc(s) {
+          return String(s ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function bookingRef(b) {
+          return "MST-" + String(b.id).split("-")[0].toUpperCase();
+        }
+
+        function shortRef(b) {
+          return String(b.id).split("-")[0];
+        }
+
+        function formatPolicyTime(t) {
+          if (!t) return "";
+          var p = String(t).split(":");
+          var h = Number(p[0]);
+          var m = p[1] ? Number(p[1]) : 0;
+          if (!Number.isFinite(h)) return esc(t);
+          var ap = h >= 12 ? "PM" : "AM";
+          var h12 = h % 12;
+          if (h12 === 0) h12 = 12;
+          var mm = Number.isFinite(m) && m ? ":" + String(m).padStart(2, "0") : "";
+          return h12 + mm + " " + ap;
+        }
+
+        function fmtCheckLine(iso, timeStr) {
+          try {
+            var d = new Date(iso + "T12:00:00");
+            var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            var months = [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr",
+              "May",
+              "Jun",
+              "Jul",
+              "Aug",
+              "Sep",
+              "Oct",
+              "Nov",
+              "Dec"
+            ];
+            var wk = days[d.getDay()];
+            var mon = months[d.getMonth()];
+            var day = d.getDate();
+            var yr = d.getFullYear();
+            return (
+              wk +
+              ", " +
+              mon +
+              " " +
+              day +
+              ", " +
+              yr +
+              ", " +
+              formatPolicyTime(timeStr || "14:00")
+            );
+          } catch (_) {
+            return esc(iso);
+          }
+        }
+
+        function paymentLabel(method) {
+          var m = String(method || "").toLowerCase();
+          if (m === "cash") return "Cash Payment";
+          return "Online Payment";
+        }
+
+        function checkoutPassed(checkOutIso) {
+          try {
+            var end = new Date(checkOutIso + "T23:59:59");
+            return end < new Date();
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function bookingStatusPill(b) {
+          var bs = String(b.status || "").toLowerCase();
+          var ps = String(b.paymentStatus || "").toLowerCase();
+          var bookingCls =
+            bs === "pending"
+              ? "bg-amber-100 text-amber-950 dark:bg-amber-900/50 dark:text-amber-50"
+              : bs === "completed"
+                ? "bg-slate-200 text-slate-900 dark:bg-slate-600 dark:text-slate-50"
+                : "bg-emerald-100 text-emerald-950 dark:bg-emerald-900/40 dark:text-emerald-50";
+          var payCls =
+            ps === "paid"
+              ? "bg-emerald-100 text-emerald-950 dark:bg-emerald-900/40 dark:text-emerald-50"
+              : "bg-amber-100 text-amber-950 dark:bg-amber-900/50 dark:text-amber-50";
+          var bookingLabel =
+            bs === "pending"
+              ? "BOOKING PENDING"
+              : bs === "completed"
+                ? "BOOKING: COMPLETED"
+                : "BOOKING: CONFIRMED";
+          var payLabel = ps === "paid" ? "PAYMENT: PAID" : "PAYMENT PENDING";
+          return (
+            '<div class="flex flex-wrap justify-end gap-2">' +
+            '<span class="inline-flex rounded-md px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide ' +
+            bookingCls +
+            '">' +
+            esc(bookingLabel) +
+            '</span><span class="inline-flex rounded-md px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-wide ' +
+            payCls +
+            '">' +
+            esc(payLabel) +
+            "</span></div>"
+          );
+        }
+
+        function rateSectionHtml(data, b, room) {
+          var reviews = room ? MarbleData.roomReviewsForRoom(data, room.id) : [];
+          var hasReview = reviews.length > 0;
+          var bs = String(b.status || "").toLowerCase();
+          var ps = String(b.paymentStatus || "").toLowerCase();
+
+          if (bs === "completed" && hasReview) {
+            var r = reviews[0];
+            var dlabel = r.date
+              ? new Date(r.date + "T12:00:00").toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric"
+                })
+              : "";
+            return (
+              '<div id="rate" class="mt-8 border-t border-border pt-8 scroll-mt-24">' +
+              '<div class="flex items-center gap-2 text-foreground">' +
+              '<svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>' +
+              '<h2 class="text-base font-semibold">Rate your stay</h2></div>' +
+              '<p class="mt-1 text-sm text-muted-foreground">Share feedback after check out to help other travelers and the property.</p>' +
+              '<div class="mt-4 rounded-lg border border-border bg-muted/40 p-4 text-left">' +
+              '<p class="text-sm font-semibold text-foreground">You rated this stay ' +
+              esc(String(r.rating != null ? r.rating : 5)) +
+              " / 5</p>" +
+              '<p class="mt-2 text-sm text-foreground">' +
+              esc(r.comment || "") +
+              "</p>" +
+              (dlabel
+                ? '<p class="mt-2 text-xs text-muted-foreground">' + esc(dlabel) + "</p>"
+                : "") +
+              "</div></div>"
+            );
+          }
+
+          var hint = "";
+          if (bs === "pending" || ps === "pending") {
+            hint = "You can rate this stay after your booking is confirmed.";
+          } else if (!checkoutPassed(b.checkOut)) {
+            hint = "You can rate this stay after your check-out date.";
+          } else {
+            hint = "Share feedback after check out to help other travelers and the property.";
+          }
+
+          return (
+            '<div id="rate" class="mt-8 border-t border-border pt-8 scroll-mt-24">' +
+            '<div class="flex items-center gap-2 text-foreground">' +
+            '<svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>' +
+            '<h2 class="text-base font-semibold">Rate your stay</h2></div>' +
+            '<p class="mt-1 text-sm text-muted-foreground">Share feedback after check out to help other travelers and the property.</p>' +
+            '<div class="mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">' +
+            esc(hint) +
+            "</div></div>"
+          );
+        }
+
+        function getChatKey(bookingId) {
+          return CHAT_PREFIX + bookingId;
+        }
+
+        function loadChat(bookingId) {
+          try {
+            var raw = localStorage.getItem(getChatKey(bookingId));
+            return raw ? JSON.parse(raw) : [];
+          } catch (_) {
+            return [];
+          }
+        }
+
+        function saveChat(bookingId, rows) {
+          localStorage.setItem(getChatKey(bookingId), JSON.stringify(rows));
+        }
+
+        function seedDemoChat(bookingId) {
+          if (bookingId !== DEMO_CHAT_BOOKING) return;
+          var rows = loadChat(bookingId);
+          if (rows.length > 0) return;
+          saveChat(bookingId, [
+            {
+              role: "guest",
+              name: "Demo Guest (Bookings)",
+              body: "Hi! We will arrive around 3 PM. Demo message for in-app booking chat.",
+              ts: new Date("2026-05-03T19:58:00").getTime()
+            }
+          ]);
+        }
+
+        function fmtChatTime(ts) {
+          try {
+            var d = new Date(ts);
+            return d.toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit"
+            });
+          } catch (_) {
+            return "";
+          }
+        }
+
+        function renderChatMessages(bookingId, container) {
+          var rows = loadChat(bookingId);
+          if (!rows.length) {
+            container.innerHTML =
+              '<p class="py-8 text-center text-sm text-muted-foreground">No messages yet. Start the conversation about this booking.</p>';
+            return;
+          }
+          container.innerHTML = rows
+            .map(function (m) {
+              var isGuest = m.role === "guest";
+              return (
+                '<div class="flex ' +
+                (isGuest ? "justify-end" : "justify-start") +
+                ' mb-3">' +
+                '<div class="' +
+                (isGuest
+                  ? "max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-primary-foreground"
+                  : "max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-card px-4 py-3") +
+                '">' +
+                '<p class="text-xs font-medium opacity-90">' +
+                esc(m.name || "Guest") +
+                " · " +
+                esc(fmtChatTime(m.ts)) +
+                "</p>" +
+                '<p class="mt-1 text-sm">' +
+                esc(m.body || "") +
+                "</p></div></div>"
+              );
+            })
+            .join("");
+          container.scrollTop = container.scrollHeight;
+        }
+
+        MarbleData.loadData().then(async function (data) {
+          await MarbleAuth.ensureSeededUsers(data);
+          var s = MarbleAuth.requireGuest("login.html");
+          if (!s) return;
+          MarbleChrome.mount({ area: "guest", active: "bookings" });
+          var id = MarbleUtils.getBookingDetailId();
+          var b = id ? MarbleData.bookingById(data, id) : null;
+          var el = document.getElementById("main");
+          if (!b || String(b.userId) !== String(s.userId)) {
+            el.innerHTML =
+              '<div class="rounded-xl border border-border bg-card p-8 text-center"><p class="text-muted-foreground">Booking not found.</p><a href="bookings.html" class="mt-4 inline-block text-sm font-medium text-primary hover:underline">← My bookings</a></div>';
+            return;
+          }
+
+          seedDemoChat(b.id);
+          var room = MarbleData.roomById(data, b.roomId);
+          var hotel = room ? MarbleData.hotelById(data, room.hotelId) : null;
+          var currency = hotel && hotel.currency ? hotel.currency : "PHP";
+          var ci = hotel && hotel.checkInTime ? hotel.checkInTime : "14:00";
+          var co = hotel && hotel.checkOutTime ? hotel.checkOutTime : "11:00";
+          var imgs = (room && room.media) || [];
+          var gallery =
+            imgs.length > 0
+              ? imgs
+                  .map(function (u) {
+                    return (
+                      '<img src="' +
+                      esc(u) +
+                      '" alt="" class="h-28 w-40 shrink-0 rounded-lg border border-border object-cover" />'
+                    );
+                  })
+                  .join("")
+              : '<div class="h-28 w-40 shrink-0 rounded-lg border border-dashed border-border bg-muted/50"></div>';
+
+          var amenities =
+            room && room.amenities && room.amenities.length
+              ? room.amenities
+                  .map(function (a) {
+                    return (
+                      '<span class="inline-flex rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground">' +
+                      esc(String(a).replace(/_/g, " ")) +
+                      "</span>"
+                    );
+                  })
+                  .join("")
+              : "";
+
+          var paid = String(b.paymentStatus || "").toLowerCase() === "paid";
+          var payRowExtra =
+            paid
+              ? '<div class="flex shrink-0 items-center gap-1.5 text-emerald-600 dark:text-emerald-400">' +
+                '<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+                '<span class="text-sm font-medium">Payment received</span></div>'
+              : "";
+
+          el.innerHTML =
+            '<a href="bookings.html" class="inline-flex items-center gap-1 text-sm font-medium text-foreground hover:text-primary">' +
+            '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>' +
+            "My bookings</a>" +
+            '<div class="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">' +
+            '<div class="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-start sm:justify-between">' +
+            '<div class="min-w-0">' +
+            '<p class="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">Trip Details</p>' +
+            '<h1 class="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">' +
+            esc(hotel ? hotel.name : "Hotel") +
+            "</h1>" +
+            (hotel && hotel.address
+              ? '<p class="mt-2 flex items-start gap-2 text-sm text-muted-foreground"><svg class="mt-0.5 h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>' +
+                esc(hotel.address) +
+                "</p>"
+              : "") +
+            '<p class="mt-2 text-sm text-muted-foreground">' +
+            esc(room ? room.name : "Room") +
+            " · Ref #" +
+            esc(shortRef(b)) +
+            "</p></div>" +
+            bookingStatusPill(b) +
+            "</div>" +
+            '<div class="mt-8">' +
+            '<p class="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">Your Room</p>' +
+            '<p class="mt-1 text-sm text-muted-foreground">Details and photos for ' +
+            esc(room ? room.name : "this room") +
+            ".</p>" +
+            '<div class="mt-4 flex gap-2 overflow-x-auto pb-2">' +
+            gallery +
+            "</div>" +
+            '<div class="mt-3 flex flex-wrap gap-2">' +
+            '<span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">' +
+            '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>' +
+            esc(String(room && room.roomType ? room.roomType : "standard")) +
+            '</span><span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">' +
+            '<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>' +
+            "Up to " +
+            esc(String(room && room.capacity ? room.capacity : 2)) +
+            " guests</span></div>" +
+            '<p class="mt-4 text-sm text-foreground">' +
+            esc(room && room.description ? room.description : "") +
+            '</p><p class="mt-6 text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">Amenities</p>' +
+            '<div class="mt-2 flex flex-wrap gap-2">' +
+            (amenities || '<span class="text-xs text-muted-foreground">—</span>') +
+            "</div></div>" +
+            '<div class="mt-8 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">' +
+            '<div class="flex gap-3 bg-card p-5">' +
+            '<svg class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>' +
+            '<div><p class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Check in</p>' +
+            '<p class="mt-1 text-sm font-medium text-foreground">' +
+            esc(fmtCheckLine(b.checkIn, ci)) +
+            "</p></div></div>" +
+            '<div class="flex gap-3 bg-card p-5">' +
+            '<svg class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+            '<div><p class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Check out</p>' +
+            '<p class="mt-1 text-sm font-medium text-foreground">' +
+            esc(fmtCheckLine(b.checkOut, co)) +
+            "</p></div></div></div>" +
+            '<div class="mt-8 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-8">' +
+            '<div class="flex items-start gap-3">' +
+            '<svg class="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>' +
+            "<div>" +
+            '<p class="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">Total</p>' +
+            '<p class="text-xl font-bold text-foreground">' +
+            MarbleUtils.formatCurrency(b.totalAmount, currency) +
+            '</p><p class="text-sm text-muted-foreground">' +
+            esc(paymentLabel(b.paymentMethod)) +
+            "</p></div></div>" +
+            payRowExtra +
+            "</div>" +
+            rateSectionHtml(data, b, room) +
+            "</div>" +
+            '<div class="mt-6 rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">' +
+            '<div class="flex items-center gap-2">' +
+            '<svg class="h-5 w-5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>' +
+            '<div><h2 class="text-base font-semibold text-foreground">Messages</h2>' +
+            '<p class="text-sm text-muted-foreground">Chat with ' +
+            esc(hotel ? hotel.name : "the property") +
+            " about this reservation.</p></div></div>" +
+            '<div id="chat-thread" class="mt-4 max-h-72 min-h-[8rem] overflow-y-auto rounded-lg border border-border bg-muted/20 px-3 py-2"></div>' +
+            '<div class="mt-4 flex gap-2">' +
+            '<textarea id="chat-input" rows="2" placeholder="Type your message..." class="min-h-[4.5rem] flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"></textarea>' +
+            '<button type="button" id="chat-send" class="inline-flex shrink-0 items-center gap-2 self-end rounded-lg border border-border bg-muted px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/80">' +
+            '<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>' +
+            "Send</button></div>" +
+            '<p class="mt-2 text-xs text-muted-foreground">Ctrl+Enter to send. Messages are stored in Marble Stay only (not sent by email).</p>' +
+            "</div>";
+
+          var thread = document.getElementById("chat-thread");
+          var input = document.getElementById("chat-input");
+          var sendBtn = document.getElementById("chat-send");
+
+          function sendMessage() {
+            var text = (input.value || "").trim();
+            if (!text) return;
+            var rows = loadChat(b.id);
+            rows.push({
+              role: "guest",
+              name: s.fullName || "Guest",
+              body: text,
+              ts: Date.now()
+            });
+            saveChat(b.id, rows);
+            input.value = "";
+            renderChatMessages(b.id, thread);
+          }
+
+          renderChatMessages(b.id, thread);
+          sendBtn.addEventListener("click", sendMessage);
+          input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              sendMessage();
+            }
+          });
+
+          if (window.location.hash === "#rate") {
+            var rateEl = document.getElementById("rate");
+            if (rateEl) rateEl.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

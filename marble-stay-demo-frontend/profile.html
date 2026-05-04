@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile Settings — Marble Stay</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="">
+    <div id="marble-header"></div>
+    <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold tracking-tight text-foreground">Profile Settings</h1>
+      <p class="mt-1 text-muted-foreground">
+        Manage your personal information and account preferences.
+      </p>
+
+      <div
+        class="mt-8 flex flex-wrap gap-1 border-b border-border"
+        role="tablist"
+        aria-label="Profile sections"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected="true"
+          data-tab="account"
+          class="profile-tab -mb-px border-b-2 border-foreground px-4 py-3 text-sm font-medium text-foreground transition hover:text-foreground"
+        >
+          Account
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-tab="preferences"
+          class="profile-tab -mb-px border-b-2 border-transparent px-4 py-3 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          Preferences
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-tab="payments"
+          class="profile-tab -mb-px border-b-2 border-transparent px-4 py-3 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          Payments
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected="false"
+          data-tab="security"
+          class="profile-tab -mb-px border-b-2 border-transparent px-4 py-3 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+        >
+          Security
+        </button>
+      </div>
+
+      <!-- Account -->
+      <div id="panel-account" role="tabpanel" class="profile-panel mt-8">
+        <div class="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <h2 class="text-lg font-semibold text-foreground">Profile information</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Update how you appear to hotels and for booking confirmations.
+          </p>
+
+          <div class="mt-8 flex flex-col gap-6 sm:flex-row sm:items-start">
+            <div class="relative shrink-0">
+              <div
+                id="avatar-preview"
+                class="flex h-28 w-28 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted text-muted-foreground"
+              >
+                <svg class="h-14 w-14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                  />
+                </svg>
+              </div>
+              <label
+                class="absolute bottom-1 right-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-card shadow-sm transition hover:bg-muted"
+                title="Change photo"
+              >
+                <input id="avatar-input" type="file" accept="image/jpeg,image/png,image/gif" class="sr-only" />
+                <svg class="h-4 w-4 text-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                  />
+                </svg>
+              </label>
+            </div>
+            <div class="min-w-0 flex-1 space-y-2">
+              <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Profile picture
+              </p>
+              <p class="text-xs text-muted-foreground">JPG, GIF or PNG. Max size of 2MB.</p>
+              <div class="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  id="avatar-upload-trigger"
+                  class="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/60"
+                >
+                  Upload new
+                </button>
+                <button type="button" id="avatar-remove" class="text-sm font-medium text-primary hover:underline">
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <form id="form-account" class="mt-10 space-y-6">
+            <div class="grid gap-6 sm:grid-cols-2">
+              <div>
+                <label for="acc-fullname" class="text-xs font-semibold text-foreground">Full name</label>
+                <input
+                  id="acc-fullname"
+                  name="fullName"
+                  type="text"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <div>
+                <label for="acc-email" class="text-xs font-semibold text-foreground">Email address</label>
+                <div class="relative mt-1.5">
+                  <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      />
+                    </svg>
+                  </span>
+                  <input
+                    id="acc-email"
+                    type="email"
+                    readonly
+                    class="w-full rounded-lg border border-border bg-muted/50 py-2 pl-10 pr-3 text-sm text-muted-foreground"
+                  />
+                </div>
+              </div>
+              <div>
+                <label for="acc-phone" class="text-xs font-semibold text-foreground">Phone number</label>
+                <div class="relative mt-1.5">
+                  <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
+                      />
+                    </svg>
+                  </span>
+                  <input
+                    id="acc-phone"
+                    name="phone"
+                    type="tel"
+                    placeholder="+63"
+                    class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  />
+                </div>
+              </div>
+              <div>
+                <label for="acc-country" class="text-xs font-semibold text-foreground">Country / region</label>
+                <select
+                  id="acc-country"
+                  name="country"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                >
+                  <option value="PH">PH</option>
+                  <option value="US">US</option>
+                  <option value="SG">SG</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label for="acc-street" class="text-xs font-semibold text-foreground">Street address</label>
+              <input
+                id="acc-street"
+                name="street"
+                type="text"
+                placeholder="House / building, street"
+                class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </div>
+            <div class="grid gap-6 sm:grid-cols-2">
+              <div>
+                <label for="acc-city" class="text-xs font-semibold text-foreground">City</label>
+                <input
+                  id="acc-city"
+                  name="city"
+                  type="text"
+                  placeholder="City"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <div>
+                <label for="acc-province" class="text-xs font-semibold text-foreground">Province / state / region</label>
+                <input
+                  id="acc-province"
+                  name="province"
+                  type="text"
+                  placeholder="e.g. Romblon, Metro Manila"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <div>
+                <label for="acc-postal" class="text-xs font-semibold text-foreground">Postal code</label>
+                <input
+                  id="acc-postal"
+                  name="postal"
+                  type="text"
+                  placeholder="ZIP / postal code"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <div>
+                <label for="acc-gender" class="text-xs font-semibold text-foreground">Gender</label>
+                <select
+                  id="acc-gender"
+                  name="gender"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                >
+                  <option value="">Select gender</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                  <option value="prefer_not">Prefer not to say</option>
+                </select>
+              </div>
+            </div>
+            <div class="sm:max-w-xs">
+              <label for="acc-dob" class="text-xs font-semibold text-foreground">Date of birth</label>
+              <div class="relative mt-1.5">
+                <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                </span>
+                <input
+                  id="acc-dob"
+                  name="dob"
+                  type="date"
+                  class="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <p class="mt-1 text-xs text-muted-foreground">
+                Optional. Helps hotels verify identity when needed.
+              </p>
+            </div>
+
+            <div class="flex justify-end border-t border-border pt-6">
+              <button
+                type="submit"
+                class="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l3 3m0 0l-3 3m3-3H4"
+                  />
+                </svg>
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Preferences -->
+      <div id="panel-preferences" role="tabpanel" class="profile-panel mt-8 hidden">
+        <div class="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <h2 class="text-lg font-semibold text-foreground">Preferences</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Set your budget, travel needs, and what you prefer in a hotel for better recommendations.
+          </p>
+          <form id="form-prefs" class="mt-8 space-y-6">
+            <div class="grid gap-6 sm:grid-cols-2">
+              <div>
+                <label for="pref-min" class="text-xs font-semibold text-foreground">Min budget (₱)</label>
+                <input
+                  id="pref-min"
+                  name="minBudget"
+                  type="number"
+                  min="0"
+                  step="100"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+              <div>
+                <label for="pref-max" class="text-xs font-semibold text-foreground">Max budget (₱)</label>
+                <input
+                  id="pref-max"
+                  name="maxBudget"
+                  type="number"
+                  min="0"
+                  step="100"
+                  class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+                />
+              </div>
+            </div>
+            <div>
+              <label for="pref-travel" class="text-xs font-semibold text-foreground">Travel needs</label>
+              <p class="mt-0.5 text-xs text-muted-foreground">
+                e.g. business trips, family travel, accessibility needs…
+              </p>
+              <textarea
+                id="pref-travel"
+                name="travelNeeds"
+                rows="4"
+                placeholder="Describe how you usually travel…"
+                class="mt-2 w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              ></textarea>
+            </div>
+            <div>
+              <label for="pref-hotel" class="text-xs font-semibold text-foreground">Hotel preferences</label>
+              <p class="mt-0.5 text-xs text-muted-foreground">
+                e.g. quiet room, breakfast included, pool, location…
+              </p>
+              <textarea
+                id="pref-hotel"
+                name="hotelPreferences"
+                rows="4"
+                placeholder="What matters most in a stay?"
+                class="mt-2 w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              ></textarea>
+            </div>
+            <div class="flex justify-end border-t border-border pt-6">
+              <button
+                type="submit"
+                class="rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold uppercase tracking-wide text-white transition hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+              >
+                Save preferences
+              </button>
+            </div>
+          </form>
+        </div>
+        <div
+          class="mt-6 flex gap-3 rounded-xl border border-border bg-muted/40 px-4 py-4 text-sm text-muted-foreground"
+        >
+          <svg class="mt-0.5 h-5 w-5 shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <p>
+            <span class="font-medium text-foreground">Personalized recommendations —</span>
+            Your budget and preferences help us rank hotels on Recommendations and search. Leave fields blank
+            anytime to see the full catalog.
+          </p>
+        </div>
+      </div>
+
+      <!-- Payments -->
+      <div id="panel-payments" role="tabpanel" class="profile-panel mt-8 hidden">
+        <div class="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <h2 class="text-lg font-semibold text-foreground">Your payments</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Review amounts and payment status for your bookings. Download a PDF e-receipt for each stay once
+            payment is marked
+            <span class="font-medium text-foreground">paid</span>.
+          </p>
+          <div class="mt-6 overflow-x-auto rounded-lg border border-border">
+            <table class="w-full min-w-[640px] text-left text-sm">
+              <thead>
+                <tr class="border-b border-border bg-muted/50 text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th class="px-4 py-3">Booking ID</th>
+                  <th class="px-4 py-3">Room</th>
+                  <th class="px-4 py-3">Amount</th>
+                  <th class="px-4 py-3">Status</th>
+                  <th class="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="payments-tbody"></tbody>
+            </table>
+          </div>
+          <p class="mt-6 text-sm text-muted-foreground">
+            Need the full booking timeline? Open
+            <a href="bookings.html" class="font-medium text-primary hover:underline">My Bookings</a>
+          </p>
+        </div>
+      </div>
+
+      <!-- Security -->
+      <div id="panel-security" role="tabpanel" class="profile-panel mt-8 hidden">
+        <div class="rounded-xl border border-border bg-card p-6 shadow-sm sm:p-8">
+          <h2 class="text-lg font-semibold text-foreground">Security</h2>
+          <p class="mt-1 text-sm text-muted-foreground">Update the password you use to sign in to Marble Stay.</p>
+          <form id="form-security" class="mt-8 max-w-md space-y-5">
+            <div>
+              <label for="sec-current" class="text-xs font-semibold text-foreground">Current password</label>
+              <input
+                id="sec-current"
+                name="currentPassword"
+                type="password"
+                autocomplete="current-password"
+                class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </div>
+            <div>
+              <label for="sec-new" class="text-xs font-semibold text-foreground">New password</label>
+              <input
+                id="sec-new"
+                name="newPassword"
+                type="password"
+                autocomplete="new-password"
+                class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </div>
+            <div>
+              <label for="sec-confirm" class="text-xs font-semibold text-foreground">Confirm new password</label>
+              <input
+                id="sec-confirm"
+                name="confirmPassword"
+                type="password"
+                autocomplete="new-password"
+                class="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </div>
+            <button
+              type="submit"
+              class="rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+            >
+              Update password
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <p id="profile-toast" class="mt-4 hidden rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100"></p>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="js/utils.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chrome.js"></script>
+    <script>
+      (function () {
+        function showToast(msg) {
+          var el = document.getElementById("profile-toast");
+          el.textContent = msg;
+          el.classList.remove("hidden");
+          clearTimeout(showToast._t);
+          showToast._t = setTimeout(function () {
+            el.classList.add("hidden");
+          }, 4000);
+        }
+
+        function esc(s) {
+          return String(s ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+        }
+
+        function bookingRef(b) {
+          return "MST-" + String(b.id).split("-")[0].toUpperCase();
+        }
+
+        function fmtCheckIn(iso) {
+          try {
+            return new Date(iso + "T12:00:00").toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric"
+            });
+          } catch (_) {
+            return iso;
+          }
+        }
+
+        function setActiveTab(name) {
+          document.querySelectorAll(".profile-tab").forEach(function (btn) {
+            var on = btn.getAttribute("data-tab") === name;
+            btn.setAttribute("aria-selected", on ? "true" : "false");
+            btn.classList.toggle("border-foreground", on);
+            btn.classList.toggle("text-foreground", on);
+            btn.classList.toggle("border-transparent", !on);
+            btn.classList.toggle("text-muted-foreground", !on);
+          });
+          document.querySelectorAll(".profile-panel").forEach(function (p) {
+            p.classList.toggle("hidden", !p.id || p.id !== "panel-" + name);
+          });
+          try {
+            history.replaceState(null, "", "#" + name);
+          } catch (_) {}
+        }
+
+        function readAvatar(profile) {
+          var box = document.getElementById("avatar-preview");
+          if (profile.avatarDataUrl) {
+            box.innerHTML =
+              '<img src="' + esc(profile.avatarDataUrl) + '" alt="" class="h-full w-full object-cover" />';
+          } else {
+            box.innerHTML =
+              '<svg class="h-14 w-14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>';
+          }
+        }
+
+        function defaultPrefs() {
+          return {
+            minBudget: "2000",
+            maxBudget: "6000",
+            travelNeeds: "Family trip — need quiet nights and kid-friendly space.",
+            hotelPreferences: "Prefer breakfast included and near the port."
+          };
+        }
+
+        function defaultProfile(session) {
+          var base = {
+            phone: "+63 900 333 0003",
+            country: "PH",
+            street: "",
+            city: "",
+            province: "",
+            postal: "",
+            gender: "",
+            dob: ""
+          };
+          if (session && session.email === "demo-guest-bookings@marblestay.local") return base;
+          return { phone: "", country: "PH", street: "", city: "", province: "", postal: "", gender: "", dob: "" };
+        }
+
+        function mergeProfile(saved, session) {
+          var d = defaultProfile(session);
+          return {
+            phone: saved.phone != null && saved.phone !== "" ? saved.phone : d.phone,
+            country: saved.country || d.country,
+            street: saved.street != null ? saved.street : d.street,
+            city: saved.city != null ? saved.city : d.city,
+            province: saved.province != null ? saved.province : d.province,
+            postal: saved.postal != null ? saved.postal : d.postal,
+            gender: saved.gender != null ? saved.gender : d.gender,
+            dob: saved.dob != null ? saved.dob : d.dob,
+            avatarDataUrl: saved.avatarDataUrl || ""
+          };
+        }
+
+        MarbleData.loadData().then(async function (data) {
+          await MarbleAuth.ensureSeededUsers(data);
+          var s = MarbleAuth.requireGuest("login.html");
+          if (!s) return;
+          MarbleChrome.mount({ area: "guest", active: window.location.pathname });
+
+          var hash = (location.hash || "").replace(/^#/, "").trim();
+          var initialTab = ["account", "preferences", "payments", "security"].indexOf(hash) >= 0 ? hash : "account";
+          setActiveTab(initialTab);
+
+          document.querySelectorAll(".profile-tab").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              setActiveTab(btn.getAttribute("data-tab"));
+            });
+          });
+
+          var profile = MarbleAuth.getGuestProfile();
+          profile = mergeProfile(profile, s);
+          readAvatar(profile);
+
+          document.getElementById("acc-fullname").value = s.fullName || "";
+          document.getElementById("acc-email").value = s.email || "";
+          document.getElementById("acc-phone").value = profile.phone || "";
+          document.getElementById("acc-country").value = profile.country || "PH";
+          document.getElementById("acc-street").value = profile.street || "";
+          document.getElementById("acc-city").value = profile.city || "";
+          document.getElementById("acc-province").value = profile.province || "";
+          document.getElementById("acc-postal").value = profile.postal || "";
+          document.getElementById("acc-gender").value = profile.gender || "";
+          document.getElementById("acc-dob").value = profile.dob || "";
+
+          var prefs = MarbleAuth.getGuestPrefs();
+          if (!prefs || Object.keys(prefs).length === 0) prefs = defaultPrefs();
+          document.getElementById("pref-min").value = prefs.minBudget != null ? prefs.minBudget : "";
+          document.getElementById("pref-max").value = prefs.maxBudget != null ? prefs.maxBudget : "";
+          document.getElementById("pref-travel").value = prefs.travelNeeds || "";
+          document.getElementById("pref-hotel").value = prefs.hotelPreferences || "";
+
+          document.getElementById("avatar-upload-trigger").addEventListener("click", function () {
+            document.getElementById("avatar-input").click();
+          });
+          document.getElementById("avatar-input").addEventListener("change", function () {
+            var f = this.files && this.files[0];
+            if (!f) return;
+            if (f.size > 2 * 1024 * 1024) {
+              alert("Please choose an image under 2MB.");
+              return;
+            }
+            var r = new FileReader();
+            r.onload = function () {
+              profile.avatarDataUrl = r.result;
+              readAvatar(profile);
+              MarbleAuth.setGuestProfile(
+                Object.assign(MarbleAuth.getGuestProfile(), { avatarDataUrl: profile.avatarDataUrl })
+              );
+              showToast("Profile photo updated.");
+            };
+            r.readAsDataURL(f);
+            this.value = "";
+          });
+          document.getElementById("avatar-remove").addEventListener("click", function () {
+            profile.avatarDataUrl = "";
+            readAvatar(profile);
+            var stored = MarbleAuth.getGuestProfile();
+            delete stored.avatarDataUrl;
+            MarbleAuth.setGuestProfile(stored);
+            showToast("Profile photo removed.");
+          });
+
+          document.getElementById("form-account").addEventListener("submit", function (e) {
+            e.preventDefault();
+            var fullName = document.getElementById("acc-fullname").value.trim();
+            MarbleAuth.updateRegistryUser({ fullName: fullName || s.fullName });
+            var merged = Object.assign({}, MarbleAuth.getGuestProfile(), {
+              phone: document.getElementById("acc-phone").value.trim(),
+              country: document.getElementById("acc-country").value,
+              street: document.getElementById("acc-street").value.trim(),
+              city: document.getElementById("acc-city").value.trim(),
+              province: document.getElementById("acc-province").value.trim(),
+              postal: document.getElementById("acc-postal").value.trim(),
+              gender: document.getElementById("acc-gender").value,
+              dob: document.getElementById("acc-dob").value
+            });
+            if (profile.avatarDataUrl) merged.avatarDataUrl = profile.avatarDataUrl;
+            else delete merged.avatarDataUrl;
+            MarbleAuth.setGuestProfile(merged);
+            s = MarbleAuth.getSession();
+            showToast("Your profile has been saved.");
+          });
+
+          document.getElementById("form-prefs").addEventListener("submit", function (e) {
+            e.preventDefault();
+            MarbleAuth.setGuestPrefs({
+              minBudget: document.getElementById("pref-min").value,
+              maxBudget: document.getElementById("pref-max").value,
+              travelNeeds: document.getElementById("pref-travel").value.trim(),
+              hotelPreferences: document.getElementById("pref-hotel").value.trim()
+            });
+            showToast("Preferences saved.");
+          });
+
+          document.getElementById("form-security").addEventListener("submit", function (e) {
+            e.preventDefault();
+            var cur = document.getElementById("sec-current").value;
+            var nw = document.getElementById("sec-new").value;
+            var cf = document.getElementById("sec-confirm").value;
+            if (!cur || !nw) {
+              alert("Enter your current password and a new password.");
+              return;
+            }
+            if (nw.length < 8) {
+              alert("New password must be at least 8 characters.");
+              return;
+            }
+            if (nw !== cf) {
+              alert("New passwords do not match.");
+              return;
+            }
+            var reg = MarbleAuth.getRegistry();
+            var u = reg.find(function (x) {
+              return x.id === s.userId;
+            });
+            if (!u || u.password !== cur) {
+              alert("Current password is incorrect.");
+              return;
+            }
+            MarbleAuth.updateRegistryUser({ password: nw });
+            document.getElementById("sec-current").value = "";
+            document.getElementById("sec-new").value = "";
+            document.getElementById("sec-confirm").value = "";
+            showToast("Password updated.");
+          });
+
+          var rows = MarbleData.bookingsForUser(data, s.userId).slice();
+          rows.sort(function (a, b) {
+            return String(b.checkIn).localeCompare(String(a.checkIn));
+          });
+          var tbody = document.getElementById("payments-tbody");
+          if (rows.length === 0) {
+            tbody.innerHTML =
+              '<tr><td colspan="5" class="px-4 py-10 text-center text-muted-foreground">No bookings yet.</td></tr>';
+          } else {
+            tbody.innerHTML = rows
+              .map(function (b) {
+                var room = MarbleData.roomById(data, b.roomId);
+                var hotel = room ? MarbleData.hotelById(data, room.hotelId) : null;
+                var paid = String(b.paymentStatus || "").toLowerCase() === "paid";
+                var statusHtml = paid
+                  ? '<span class="inline-flex rounded-md bg-emerald-100 px-2.5 py-1 text-xs font-semibold uppercase text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100">Paid</span>'
+                  : '<span class="inline-flex rounded-md bg-amber-100 px-2.5 py-1 text-xs font-semibold uppercase text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">Unpaid</span>';
+                var actionHtml = paid
+                  ? '<button type="button" class="js-receipt inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 dark:bg-slate-200 dark:text-slate-900" data-booking-id="' +
+                    esc(b.id) +
+                    '"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>Download e-receipt</button>'
+                  : '<a href="' +
+                    esc(MarbleUtils.bookingDetailHref(b.id)) +
+                    '" class="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:opacity-90 dark:bg-slate-200 dark:text-slate-900"><svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>View details</a>';
+                return (
+                  '<tr class="border-b border-border last:border-0">' +
+                  '<td class="px-4 py-4 font-semibold text-foreground">#' +
+                  esc(bookingRef(b)) +
+                  "</td>" +
+                  '<td class="px-4 py-4"><p class="font-semibold text-foreground">' +
+                  esc(room ? room.name : "—") +
+                  '</p><p class="text-xs text-muted-foreground">Check-in: ' +
+                  esc(fmtCheckIn(b.checkIn)) +
+                  "</p></td>" +
+                  '<td class="px-4 py-4 font-medium text-foreground">' +
+                  esc(MarbleUtils.formatCurrency(b.totalAmount, hotel && hotel.currency)) +
+                  "</td>" +
+                  '<td class="px-4 py-4">' +
+                  statusHtml +
+                  "</td>" +
+                  '<td class="px-4 py-4 text-right">' +
+                  actionHtml +
+                  "</td></tr>"
+                );
+              })
+              .join("");
+            tbody.querySelectorAll(".js-receipt").forEach(function (btn) {
+              btn.addEventListener("click", function () {
+                var id = btn.getAttribute("data-booking-id");
+                var booking = rows.find(function (x) {
+                  return x.id === id;
+                });
+                if (!booking) return;
+                var h = MarbleData.roomById(data, booking.roomId);
+                var hot = h ? MarbleData.hotelById(data, h.hotelId) : null;
+                var text =
+                  "Marble Stay — E-receipt (demo)\n" +
+                  "Booking: " +
+                  bookingRef(booking) +
+                  "\n" +
+                  "Room: " +
+                  (h ? h.name : "") +
+                  "\n" +
+                  "Amount: " +
+                  MarbleUtils.formatCurrency(booking.totalAmount, hot && hot.currency) +
+                  "\n";
+                var blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+                var a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = "marble-stay-receipt-" + String(booking.id).slice(0, 8) + ".txt";
+                a.click();
+                URL.revokeObjectURL(a.href);
+              });
+            });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

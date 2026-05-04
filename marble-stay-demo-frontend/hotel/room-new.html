@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New room — Marble Stay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../assets/app.css" />
+  </head>
+  <body class="flex min-h-screen flex-col bg-background" data-base="..">
+    <div id="marble-header"></div>
+    <main class="mx-auto max-w-lg flex-1 px-4 py-8">
+      <div id="marble-pending-banner-root"></div>
+      <div id="room-new-body">
+        <h1 class="text-2xl font-bold">Add room</h1>
+        <p class="mt-2 text-sm text-muted-foreground">List a new room type for guests to book.</p>
+        <form id="f" class="mt-6 space-y-4">
+        <input name="name" placeholder="Room name" required class="w-full rounded-lg border border-input px-3 py-2 text-sm" />
+        <input name="price" type="number" placeholder="Price / night" required class="w-full rounded-lg border border-input px-3 py-2 text-sm" />
+        <button type="submit" class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Save room</button>
+        </form>
+      </div>
+    </main>
+    <div id="marble-footer"></div>
+    <script src="../js/data.js"></script>
+    <script src="../js/auth.js"></script>
+    <script src="../js/chrome.js"></script>
+    <script src="../js/hotel-pending-banner.js"></script>
+    <script>
+      MarbleData.loadData().then(async function (data) {
+        await MarbleAuth.ensureSeededUsers(data);
+        const s = MarbleAuth.requireHotel();
+        if (!s) return;
+        MarbleChrome.mount({ area: "hotel", active: "rooms", isHotelSection: true });
+        const hotel = MarbleData.hotelById(data, s.hotelId);
+        MarbleHotelPendingBanner.mount(document.getElementById("marble-pending-banner-root"), hotel);
+        if (MarbleHotelPendingBanner.shouldShowNotice(hotel)) {
+          document.getElementById("room-new-body").classList.add("hidden");
+          return;
+        }
+        document.getElementById("f").addEventListener("submit", function (e) {
+          e.preventDefault();
+          window.location.href = "rooms.html";
+        });
+      });
+    </script>
+  </body>
+</html>

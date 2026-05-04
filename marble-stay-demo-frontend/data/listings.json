@@ -1,0 +1,247 @@
+{
+  "meta": {
+    "appName": "Marble Stay",
+    "tagline": "Romblon Hotels"
+  },
+  "seedUsers": [
+    {
+      "id": "b0000001-0000-4000-8000-000000000001",
+      "email": "demo-hotel-verified@marblestay.local",
+      "password": "demo_user1234",
+      "role": "hotel",
+      "fullName": "Demo Verified Owner",
+      "hotelId": "a0000001-0000-4000-8000-000000000001",
+      "onboardingComplete": true
+    },
+    {
+      "id": "b0000001-0000-4000-8000-000000000002",
+      "email": "demo-hotel-pending@marblestay.local",
+      "password": "demo_user1234",
+      "role": "hotel",
+      "fullName": "Demo Pending Owner",
+      "hotelId": "a0000001-0000-4000-8000-000000000002",
+      "onboardingComplete": true
+    },
+    {
+      "id": "b0000001-0000-4000-8000-000000000003",
+      "email": "demo-guest-onboarding@marblestay.local",
+      "password": "demo_user1234",
+      "role": "guest",
+      "fullName": "Demo Guest (Onboarding)",
+      "onboardingComplete": false
+    },
+    {
+      "id": "b0000001-0000-4000-8000-000000000004",
+      "email": "demo-guest-bookings@marblestay.local",
+      "password": "demo_user1234",
+      "role": "guest",
+      "fullName": "Demo Guest (Bookings)",
+      "onboardingComplete": true
+    },
+    {
+      "id": "admin-seed-001",
+      "email": "admin@marblestay.local",
+      "password": "admin1234",
+      "role": "admin",
+      "fullName": "System Admin",
+      "onboardingComplete": true
+    }
+  ],
+  "amenityFilterOptions": ["wifi", "tv", "minibar", "sea_view", "pool"],
+  "hotels": [
+    {
+      "id": "a0000001-0000-4000-8000-000000000001",
+      "name": "Marble Bay Resort & Spa",
+      "description": "Waterfront resort steps from Romblon port—outdoor pool, sea-view rooms, and full concierge service.",
+      "address": "Romblon Town Proper, Romblon, Philippines",
+      "latitude": 12.5777,
+      "longitude": 122.2691,
+      "contactEmail": "reservations@marblebay.marblestay.ph",
+      "contactPhone": "+63 900 111 0001",
+      "images": [
+        "https://loremflickr.com/1600/1067/hotel,luxury,bedroom?lock=88001",
+        "https://loremflickr.com/1600/1067/hotel,luxury,bedroom?lock=88002",
+        "https://loremflickr.com/1600/1067/hotel,luxury,bedroom?lock=88003"
+      ],
+      "profileImage": "https://loremflickr.com/800/800/hotel,luxury,bedroom?lock=88006",
+      "coverImage": "https://loremflickr.com/1920/1080/hotel,luxury,bedroom?lock=88007",
+      "verificationStatus": "verified",
+      "currency": "PHP",
+      "bio": "Family-friendly resort near the ferry terminal, with airport and island-hopping transfers on request.",
+      "checkInTime": "14:00",
+      "checkOutTime": "11:00",
+      "averageRating": 5,
+      "reviewCount": 1,
+      "minPrice": "2800"
+    },
+    {
+      "id": "a0000001-0000-4000-8000-000000000002",
+      "name": "Lonos Hill Garden Inn",
+      "description": "Boutique inn on a quiet hillside—garden rooms, home-style breakfast, and personalized hosting.",
+      "address": "Lonos, Romblon, Philippines",
+      "latitude": 12.585,
+      "longitude": 122.275,
+      "contactEmail": "stay@lonosgarden.marblestay.ph",
+      "contactPhone": "+63 900 222 0002",
+      "images": [
+        "https://loremflickr.com/1600/1067/boutique,hotel,interior?lock=88101",
+        "https://loremflickr.com/1600/1067/boutique,hotel,interior?lock=88102"
+      ],
+      "profileImage": "https://loremflickr.com/800/800/boutique,hotel,interior?lock=88106",
+      "coverImage": "https://loremflickr.com/1920/1080/boutique,hotel,interior?lock=88107",
+      "verificationStatus": "pending",
+      "currency": "PHP",
+      "bio": "A small inn surrounded by greenery—ideal for travelers who want calm nights and easy access to town.",
+      "checkInTime": "15:00",
+      "checkOutTime": "10:00",
+      "averageRating": null,
+      "reviewCount": 0,
+      "minPrice": "2200"
+    }
+  ],
+  "rooms": [
+    {
+      "id": "c0000001-0000-4000-8000-000000000001",
+      "hotelId": "a0000001-0000-4000-8000-000000000001",
+      "name": "Deluxe Sea View",
+      "roomType": "deluxe",
+      "basePriceNight": 4500,
+      "hourlyRate": null,
+      "capacity": 2,
+      "amenities": ["wifi", "tv", "minibar", "sea_view"],
+      "description": "Corner room with a private balcony overlooking the strait.",
+      "offerHourly": false,
+      "isAvailable": true,
+      "media": [
+        "https://loremflickr.com/1200/800/hotel,luxury,bedroom?lock=88008",
+        "https://loremflickr.com/1200/800/hotel,luxury,bedroom?lock=88009"
+      ]
+    },
+    {
+      "id": "c0000001-0000-4000-8000-000000000002",
+      "hotelId": "a0000001-0000-4000-8000-000000000001",
+      "name": "Standard Twin",
+      "roomType": "standard",
+      "basePriceNight": 2800,
+      "hourlyRate": 350,
+      "capacity": 2,
+      "amenities": ["wifi", "tv"],
+      "description": "Comfortable twin beds; hourly stays available for short layovers.",
+      "offerHourly": true,
+      "isAvailable": true,
+      "media": [
+        "https://loremflickr.com/1200/800/hotel,luxury,bedroom?lock=88012",
+        "https://loremflickr.com/1200/800/hotel,luxury,bedroom?lock=88013"
+      ]
+    },
+    {
+      "id": "c0000001-0000-4000-8000-000000000003",
+      "hotelId": "a0000001-0000-4000-8000-000000000002",
+      "name": "Garden Room",
+      "roomType": "standard",
+      "basePriceNight": 2200,
+      "hourlyRate": null,
+      "capacity": 2,
+      "amenities": ["wifi"],
+      "description": "Ground-floor room opening onto the garden courtyard.",
+      "offerHourly": false,
+      "isAvailable": true,
+      "media": [
+        "https://loremflickr.com/1200/800/hotel,room,garden?lock=88201",
+        "https://loremflickr.com/1200/800/hotel,room,garden?lock=88202"
+      ]
+    }
+  ],
+  "roomReviews": [
+    {
+      "roomId": "c0000001-0000-4000-8000-000000000001",
+      "rating": 5,
+      "date": "2026-05-03",
+      "comment": "Excellent stay — demo review for completed booking."
+    }
+  ],
+  "paymentMethods": [
+    {
+      "id": "d0000001-0000-4000-8000-000000000001",
+      "hotelId": "a0000001-0000-4000-8000-000000000001",
+      "label": "GCash",
+      "accountName": "Marble Bay Resort & Spa",
+      "accountNumber": "09171234567"
+    }
+  ],
+  "bookings": [
+    {
+      "id": "e0000001-0000-4000-8000-000000000001",
+      "userId": "b0000001-0000-4000-8000-000000000004",
+      "roomId": "c0000001-0000-4000-8000-000000000001",
+      "checkIn": "2026-05-17",
+      "checkOut": "2026-05-20",
+      "bookingType": "nightly",
+      "totalAmount": 13500,
+      "status": "pending",
+      "paymentStatus": "pending",
+      "paymentMethod": "online",
+      "hourlyHours": null
+    },
+    {
+      "id": "e0000001-0000-4000-8000-000000000002",
+      "userId": "b0000001-0000-4000-8000-000000000004",
+      "roomId": "c0000001-0000-4000-8000-000000000002",
+      "checkIn": "2026-05-06",
+      "checkOut": "2026-05-09",
+      "bookingType": "nightly",
+      "totalAmount": 8400,
+      "status": "confirmed",
+      "paymentStatus": "paid",
+      "paymentMethod": "online",
+      "hourlyHours": null
+    },
+    {
+      "id": "e0000001-0000-4000-8000-000000000003",
+      "userId": "b0000001-0000-4000-8000-000000000004",
+      "roomId": "c0000001-0000-4000-8000-000000000001",
+      "checkIn": "2026-04-12",
+      "checkOut": "2026-04-15",
+      "bookingType": "nightly",
+      "totalAmount": 13500,
+      "status": "completed",
+      "paymentStatus": "paid",
+      "paymentMethod": "cash",
+      "hourlyHours": null
+    },
+    {
+      "id": "e0000001-0000-4000-8000-000000000004",
+      "userId": "b0000001-0000-4000-8000-000000000004",
+      "roomId": "c0000001-0000-4000-8000-000000000002",
+      "checkIn": "2026-05-04",
+      "checkOut": "2026-05-08",
+      "bookingType": "nightly",
+      "totalAmount": 11760,
+      "status": "completed",
+      "paymentStatus": "paid",
+      "paymentMethod": "online",
+      "hourlyHours": null
+    }
+  ],
+  "recommendations": [
+    {
+      "hotelId": "a0000001-0000-4000-8000-000000000001",
+      "score": 0.95,
+      "reason": "Matches your budget and sea_view preference."
+    }
+  ],
+  "adminUsersDirectory": [
+    {
+      "id": "b0000001-0000-4000-8000-000000000001",
+      "email": "demo-hotel-verified@marblestay.local",
+      "fullName": "Demo Verified Owner",
+      "role": "hotel"
+    },
+    {
+      "id": "b0000001-0000-4000-8000-000000000004",
+      "email": "demo-guest-bookings@marblestay.local",
+      "fullName": "Demo Guest (Bookings)",
+      "role": "guest"
+    }
+  ]
+}
